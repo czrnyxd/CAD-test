@@ -13,6 +13,17 @@ npm run build      # wersja produkcyjna w katalogu dist/ (statyczne pliki)
 
 Po `npm run dev` otwórz na tablecie adres `http://<ip-komputera>:5173`.
 
+## Wersja online (GitHub Pages)
+
+Każdy push na `master` buduje aplikację i publikuje ją pod adresem **https://czrnyxd.github.io/CAD-test/** (workflow `.github/workflows/pages.yml`).
+
+Jednorazowa konfiguracja na github.com (da się zrobić z telefonu):
+1. **Settings → General → Danger Zone → Change visibility → Public** (Pages na darmowym koncie działa tylko dla publicznych repozytoriów).
+2. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+3. **Actions → Deploy to GitHub Pages → Run workflow** (albo dowolny nowy push).
+
+Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („Dodaj do ekranu głównego”), żeby otwierała się jak aplikacja.
+
 ## Co działa
 
 - **Edytor kroków:** odcinek, gięcie płaskie, gięcie na kant, skręt. Wartości wpisuje się na dużej klawiaturze numerycznej z szybkimi kątami. Kierunek gięcia wybiera się strzałkami. Nowe gięcie wstawia się za zaznaczonym odcinkiem.
