@@ -1,0 +1,10 @@
+{
+  "name": "BusBar CAD",
+  "short_name": "BusBar",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1f2933",
+  "theme_color": "#1f2933",
+  "icons": []
+}
