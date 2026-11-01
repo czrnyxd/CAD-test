@@ -27,6 +27,8 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
 ## Co działa
 
 - **Edytor kroków:** odcinki i gięcia płaskie (przez grubość szyny). Wartości wpisuje się na dużej klawiaturze numerycznej z szybkimi kątami. Kierunek gięcia wybiera się przyciskami ↑ w górę / ↓ w dół. Nowe gięcie wstawia się za zaznaczonym odcinkiem.
+- **Otwory:** okrągłe i fasolki na odcinkach prostych. Pozycja wzdłuż odcinka (tak jak jego wymiar), średnica, długość fasolki i przesunięcie od osi. Na rozwinięciu są wymiary od końca A i osobna tabela otworów. Aplikacja ostrzega, gdy otwór jest w strefie gięcia, za blisko gięcia albo poza szerokością szyny.
+- **Podwójna szyna:** dwie szyny gięte w pakiecie, druga nad albo pod pierwszą, z opcjonalnym odstępem. W każdym gięciu szyna wewnętrzna ma promień narzędzia, a zewnętrzna R + grubość + odstęp. Łuki są współśrodkowe, szyny przylegają, a otwory wypadają na sobie. Każda szyna ma własną długość cięcia, tabelę gięć i otworów oraz rysunek. Wymiary wpisuje się dla szyny 1.
 - **Model 3D:**
   - obrót jednym palcem, zoom i przesuwanie dwoma,
   - widoki ISO/Przód/Góra/Bok i automatyczne dopasowanie kadru,
@@ -55,6 +57,7 @@ src/store.ts   stan aplikacji, historia cofnij/ponów, zapis lokalny
 ## Ograniczenia prototypu
 
 - Współczynniki K i sprężynowania to wartości przykładowe. Trzeba je skalibrować na próbkach z maszyny.
-- Brak otworów, eksportu DXF, kreatora kalibracji i trybu offline (service worker). To kolejne etapy z planu.
+- Brak eksportu DXF, kreatora kalibracji i trybu offline (service worker). To kolejne etapy z planu.
+- Podwójna szyna zakłada, że zewnętrzną szynę da się giąć z promieniem R + grubość + odstęp. Do sprawdzenia, czy giętarka ma takie narzędzie albo czy gięcie zewnętrznej szyny wykonuje się inaczej.
 - Kierunki „w górę/w dół” są liczone względem szyny w chwili gięcia. Do ustalenia z operatorem, jak to przełożyć na ułożenie szyny w maszynie.
 - Giętarka robi tylko gięcia płaskie, więc gięć na kant i skrętów celowo nie ma. Starsze projekty z nimi są przy wczytaniu konwertowane: gięcie na kant staje się płaskim, a skręt jest usuwany.

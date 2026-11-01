@@ -20,17 +20,18 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
   const X = (mm: number) => mL + mm * scale;
   const barH = Math.min(90, Math.max(30, W * scale));
 
-  const { bends } = analysis;
+  const { bends, holes } = analysis;
   const labelRows = 2;
   const yBarTop = 40 + labelRows * 22 + 46;
   const yBarBot = yBarTop + barH;
   const yChain = yBarTop - 22;
+  const Y = (acrossMm: number) => yBarTop + (acrossMm / W) * barH; // 0 = upper edge of the drawing
 
   // Positions for chain dimensions: ends and bend lines.
   const marks = [0, ...bends.map((b) => b.position), L].sort((a, b) => a - b);
   const chain = marks.slice(1).map((m, k) => [marks[k], m] as const).filter(([a, b]) => b - a > 0.05);
 
-  const baseRows = bends.length;
+  const baseRows = bends.length + holes.length;
   const yBase0 = yBarBot + 34;
   const rowH = 24;
   const yTotal = yBase0 + baseRows * rowH + 10;
@@ -72,6 +73,24 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
         </g>
       ))}
 
+      {/* holes */}
+      {holes.map((h) => {
+        const cx = X(h.flatPos);
+        const cy = Y(W / 2 + h.offset);
+        const rx = Math.max(2.5, (h.length / 2) * scale);
+        const ry = Math.max(2.5, (h.diameter / 2 / W) * barH);
+        return (
+          <g key={`h${h.no}`}>
+            <rect x={cx - rx} y={cy - ry} width={2 * rx} height={2 * ry} rx={Math.min(rx, ry)} fill="#fff" stroke="#24150a" strokeWidth="1.4" />
+            <line x1={cx - rx - 4} y1={cy} x2={cx + rx + 4} y2={cy} stroke="#24150a" strokeWidth="0.6" />
+            <line x1={cx} y1={cy - ry - 4} x2={cx} y2={cy + ry + 4} stroke="#24150a" strokeWidth="0.6" />
+            <text x={cx + rx + 3} y={cy - ry - 2} className="t-hole">
+              O{h.no}
+            </text>
+          </g>
+        );
+      })}
+
       {/* start marker */}
       <text x={X(0) - 14} y={yBarTop + barH / 2 + 7} textAnchor="end" className="t-start">
         A
@@ -87,6 +106,19 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
         <Dim key={`d${k}`} x1={X(0)} x2={X(b.position)} y={yBase0 + k * rowH} yFrom={yBarBot} text={`${fmt(b.position)}  (${b.no})`} />
       ))}
 
+      {/* hole positions from start */}
+      {holes.map((h, k) => (
+        <Dim
+          key={`hd${k}`}
+          x1={X(0)}
+          x2={X(h.flatPos)}
+          y={yBase0 + (bends.length + k) * rowH}
+          yFrom={Y(W / 2 + h.offset)}
+          text={`${fmt(h.flatPos)}  (O${h.no})`}
+          hole
+        />
+      ))}
+
       {/* total length */}
       <Dim x1={X(0)} x2={X(L)} y={yTotal} yFrom={yBarBot} text={`L = ${fmt(L)} mm`} bold />
 
@@ -97,12 +129,28 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
   );
 }
 
-function Dim({ x1, x2, y, yFrom, text, bold }: { x1: number; x2: number; y: number; yFrom: number; text: string; bold?: boolean }) {
+function Dim({
+  x1,
+  x2,
+  y,
+  yFrom,
+  text,
+  bold,
+  hole,
+}: {
+  x1: number;
+  x2: number;
+  y: number;
+  yFrom: number;
+  text: string;
+  bold?: boolean;
+  hole?: boolean;
+}) {
   const short = x2 - x1 < 46;
   return (
-    <g className="dim">
-      <line x1={x1} y1={yFrom} x2={x1} y2={y + (y > yFrom ? 5 : -5)} stroke="#777" strokeWidth="0.8" />
-      <line x1={x2} y1={yFrom} x2={x2} y2={y + (y > yFrom ? 5 : -5)} stroke="#777" strokeWidth="0.8" />
+    <g className={hole ? 'dim dim-hole' : 'dim'}>
+      <line x1={x1} y1={y + (y > yFrom ? -14 : 14)} x2={x1} y2={y + (y > yFrom ? 5 : -5)} stroke="#777" strokeWidth="0.8" />
+      <line x1={x2} y1={yFrom} x2={x2} y2={y + (y > yFrom ? 5 : -5)} stroke="#777" strokeWidth="0.8" strokeDasharray={hole ? '3 3' : undefined} />
       <line x1={x1} y1={y} x2={x2} y2={y} stroke="#222" strokeWidth="1" markerStart="url(#arr)" markerEnd="url(#arr)" />
       <text
         x={short ? x2 + 4 : (x1 + x2) / 2}
@@ -156,6 +204,33 @@ export function BendTable({ analysis, settings }: { analysis: Analysis; settings
           </td>
         </tr>
       </tfoot>
+    </table>
+  );
+}
+
+export function HoleTable({ bar, analysis }: { bar: Busbar; analysis: Analysis }) {
+  if (!analysis.holes.length) return null;
+  const W = bar.section.width;
+  return (
+    <table className="bend-table hole-table">
+      <thead>
+        <tr>
+          <th>Nr</th>
+          <th>Pozycja od A [mm]</th>
+          <th>Od górnej krawędzi [mm]</th>
+          <th>Otwór</th>
+        </tr>
+      </thead>
+      <tbody>
+        {analysis.holes.map((h) => (
+          <tr key={h.no}>
+            <td className="num-badge hole">O{h.no}</td>
+            <td className="big">{fmt(h.flatPos)}</td>
+            <td>{fmt(W / 2 + h.offset)}</td>
+            <td>{h.length > h.diameter ? `fasolka ${fmt(h.diameter)} × ${fmt(h.length)}` : `Ø ${fmt(h.diameter)}`}</td>
+          </tr>
+        ))}
+      </tbody>
     </table>
   );
 }

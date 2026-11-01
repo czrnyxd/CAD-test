@@ -1,13 +1,17 @@
 import { useEffect, useRef } from 'react';
 import { fmt, type Analysis, type Issue } from '../core/analyze';
 import { minRadius } from '../core/bending';
+import { doubleConfig } from '../core/assembly';
 import {
   DIRECTION_ARROW,
   DIRECTION_LABEL,
   bend,
+  hole,
   straight,
   type Busbar,
   type Direction,
+  type DoubleConfig,
+  type Hole,
   type MachineSettings,
   type Step,
 } from '../core/model';
@@ -21,12 +25,21 @@ interface Props {
   selected: number | null;
   onSelect: (i: number | null) => void;
   updateSteps: (fn: (steps: Step[]) => Step[]) => void;
+  setDouble: (cfg: DoubleConfig) => void;
   numpad: (req: NumPadRequest) => void;
 }
 
+const HOLE_DIAMETERS = [9, 11, 13, 14, 17, 18];
+const REF_TEXT = {
+  outside: 'od zewnętrznej krawędzi poprzedniego ramienia',
+  inside: 'od wewnętrznej krawędzi poprzedniego ramienia',
+  centerline: 'od osi poprzedniego ramienia',
+} as const;
+
 const ANGLES = [15, 30, 45, 60, 90, 120, 135];
 
-export function StepList({ bar, analysis, issues, settings, selected, onSelect, updateSteps, numpad }: Props) {
+export function StepList({ bar, analysis, issues, settings, selected, onSelect, updateSteps, setDouble, numpad }: Props) {
+  const dbl = doubleConfig(bar);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,6 +60,32 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
     onSelect(insertAt);
   };
 
+  const patchHole = (i: number, id: string, p: Partial<Hole>) =>
+    updateSteps((steps) =>
+      steps.map((s, k) =>
+        k === i && s.kind === 'straight' ? { ...s, holes: (s.holes ?? []).map((h) => (h.id === id ? { ...h, ...p } : h)) } : s,
+      ),
+    );
+
+  const removeHole = (i: number, id: string) =>
+    updateSteps((steps) =>
+      steps.map((s, k) => (k === i && s.kind === 'straight' ? { ...s, holes: (s.holes ?? []).filter((h) => h.id !== id) } : s)),
+    );
+
+  const addHole = (i: number) => {
+    const s = bar.steps[i];
+    if (s.kind !== 'straight') return;
+    const net = Math.max(0, analysis.netStraight[i] ?? s.length);
+    // Centre of the straight part of the leg, measured like the leg dimension.
+    const sbBefore = analysis.bends.find((b) => b.stepIndex === i - 1)?.setback ?? 0;
+    const pos = Math.round(sbBefore + net / 2);
+    const d = bar.section.width >= 30 ? 13 : 9;
+    updateSteps((steps) =>
+      steps.map((st, k) => (k === i && st.kind === 'straight' ? { ...st, holes: [...(st.holes ?? []), hole(pos, d)] } : st)),
+    );
+    onSelect(i);
+  };
+
   const remove = (i: number) => {
     const s = bar.steps[i];
     updateSteps((steps) => {
@@ -61,7 +100,8 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
       const prev = steps[i - 1];
       const next = steps[i + 1];
       if (prev?.kind === 'straight' && next?.kind === 'straight') {
-        const merged = { ...prev, length: prev.length + next.length };
+        const holes = [...(prev.holes ?? []), ...(next.holes ?? []).map((h) => ({ ...h, position: h.position + prev.length }))];
+        const merged = { ...prev, length: prev.length + next.length, holes };
         return [...steps.slice(0, i - 1), merged, ...steps.slice(i + 2)];
       }
       return steps.filter((_, k) => k !== i);
@@ -72,6 +112,44 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
   let legNo = 0;
   return (
     <div className="steps">
+      <div className="pack">
+        <div className="seg">
+          <button className={!dbl.enabled ? 'on' : ''} onClick={() => setDouble({ ...dbl, enabled: false })}>
+            Pojedyncza
+          </button>
+          <button className={dbl.enabled ? 'on' : ''} onClick={() => setDouble({ ...dbl, enabled: true })}>
+            Podwójna
+          </button>
+        </div>
+        {dbl.enabled && (
+          <>
+            <div className="seg">
+              <button className={dbl.side === 'above' ? 'on' : ''} onClick={() => setDouble({ ...dbl, side: 'above' })}>
+                2 nad
+              </button>
+              <button className={dbl.side === 'below' ? 'on' : ''} onClick={() => setDouble({ ...dbl, side: 'below' })}>
+                2 pod
+              </button>
+            </div>
+            <Chip
+              label="Odstęp"
+              value={`${fmt(dbl.gap)} mm`}
+              onClick={() =>
+                numpad({
+                  title: 'Odstęp między szynami (0 = przylegają)',
+                  value: dbl.gap,
+                  unit: 'mm',
+                  min: 0,
+                  max: 200,
+                  quick: [0, 1, 2, bar.section.thickness],
+                  onOk: (v) => setDouble({ ...dbl, gap: v }),
+                })
+              }
+            />
+          </>
+        )}
+      </div>
+      {dbl.enabled && <div className="pack-hint">Wymiary odcinków i otworów dotyczą szyny 1.</div>}
       <div className="steps-list" ref={listRef}>
         {bar.steps.map((s, i) => {
           const stepIssues = issues.filter((x) => x.stepIndex === i);
@@ -112,6 +190,85 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
                     <span className="step-note">prosta część: {fmt(net)} mm</span>
                   )}
                 </div>
+                {(s.holes ?? []).map((h) => {
+                  const info = analysis.holes.find((x) => x.holeId === h.id);
+                  const n = legNo;
+                  const ref = i === 0 ? 'od końca A' : REF_TEXT[bar.dimensionMode];
+                  return (
+                    <div className="hole-row" key={h.id}>
+                      <span className="hole-badge">O{info?.no ?? '?'}</span>
+                      <Chip
+                        label={i === 0 ? 'Od A' : 'Pozycja'}
+                        value={`${fmt(h.position)}`}
+                        onClick={() =>
+                          numpad({
+                            title: `Odcinek ${n} – środek otworu ${ref}`,
+                            value: h.position,
+                            unit: 'mm',
+                            min: 0,
+                            max: s.length,
+                            onOk: (v) => patchHole(i, h.id, { position: v }),
+                          })
+                        }
+                      />
+                      <Chip
+                        label="Ø"
+                        value={`${fmt(h.diameter)}`}
+                        onClick={() =>
+                          numpad({
+                            title: 'Średnica otworu / szerokość fasolki',
+                            value: h.diameter,
+                            unit: 'mm',
+                            min: 1,
+                            max: bar.section.width,
+                            quick: HOLE_DIAMETERS,
+                            onOk: (v) => patchHole(i, h.id, { diameter: v }),
+                          })
+                        }
+                      />
+                      <Chip
+                        label="Fasolka"
+                        value={h.slot > h.diameter ? `${fmt(h.slot)}` : '—'}
+                        onClick={() =>
+                          numpad({
+                            title: 'Długość fasolki (0 = otwór okrągły)',
+                            value: h.slot,
+                            unit: 'mm',
+                            min: 0,
+                            max: 500,
+                            quick: [0, 20, 25, 30, 40],
+                            onOk: (v) => patchHole(i, h.id, { slot: v }),
+                          })
+                        }
+                      />
+                      <Chip
+                        label="Od osi"
+                        value={`${fmt(h.offset)}`}
+                        onClick={() =>
+                          numpad({
+                            title: 'Przesunięcie otworu od osi szyny (w poprzek)',
+                            value: h.offset,
+                            unit: 'mm',
+                            min: -bar.section.width / 2,
+                            max: bar.section.width / 2,
+                            quick: [0, -bar.section.width / 4, bar.section.width / 4],
+                            onOk: (v) => patchHole(i, h.id, { offset: v }),
+                          })
+                        }
+                      />
+                      <Del onClick={() => removeHole(i, h.id)} />
+                    </div>
+                  );
+                })}
+                <button
+                  className="add-hole"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    addHole(i);
+                  }}
+                >
+                  + Otwór
+                </button>
                 <IssueList issues={stepIssues} />
               </div>
             );

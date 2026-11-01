@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { analyze, fmt, type Issue } from './core/analyze';
-import { buildPath, collisionIssues } from './core/geometry';
+import { fmt, type Issue } from './core/analyze';
+import { buildAssembly, type Assembly, type BarPart } from './core/assembly';
 import {
   DIMENSION_MODE_LABEL,
   SECTIONS,
@@ -14,7 +14,7 @@ import {
 } from './core/model';
 import { TEMPLATES } from './core/templates';
 import { deleteProject, duplicateBar, loadProjects, useStore } from './store';
-import { BendTable, FlatPatternSvg } from './ui/FlatPattern';
+import { BendTable, FlatPatternSvg, HoleTable } from './ui/FlatPattern';
 import { NumPad, type NumPadRequest } from './ui/NumPad';
 import { renderSnapshot } from './ui/scene';
 import { StepList } from './ui/StepList';
@@ -45,9 +45,10 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const analysis = useMemo(() => analyze(bar, settings), [bar, settings]);
-  const path = useMemo(() => buildPath(bar, analysis), [bar, analysis]);
-  const issues: Issue[] = useMemo(() => [...analysis.issues, ...collisionIssues(bar, path)], [analysis, bar, path]);
+  const assembly = useMemo(() => buildAssembly(bar, settings), [bar, settings]);
+  const analysis = assembly.parts[0].analysis;
+  const double = assembly.parts.length > 1;
+  const issues: Issue[] = assembly.issues;
   const errorSteps = useMemo(
     () => new Set(issues.filter((i) => i.level === 'error' && i.stepIndex !== undefined).map((i) => i.stepIndex!)),
     [issues],
@@ -71,7 +72,7 @@ export default function App() {
       setToast('Drukowanie nie działa w podglądzie osadzonym. Otwórz aplikację w osobnej karcie przeglądarki.');
       return;
     }
-    setSnapshot(renderSnapshot(bar, path));
+    setSnapshot(renderSnapshot(assembly.parts, assembly.bbox));
     setTimeout(() => window.print(), 150);
   };
 
@@ -128,7 +129,7 @@ export default function App() {
       <main className="main">
         {tab === 'model' && (
           <div className="model-tab">
-            <Viewer3D bar={bar} path={path} analysis={analysis} selected={selected} errorSteps={errorSteps} onSelect={onSelect} />
+            <Viewer3D bar={bar} assembly={assembly} selected={selected} errorSteps={errorSteps} onSelect={onSelect} />
             <StepList
               bar={bar}
               analysis={analysis}
@@ -137,39 +138,23 @@ export default function App() {
               selected={selected}
               onSelect={onSelect}
               updateSteps={updateSteps}
+              setDouble={(cfg) => update((b) => ({ ...b, double: cfg }))}
               numpad={setNp}
             />
           </div>
         )}
         {tab === 'flat' && (
           <div className="flat-tab">
-            <div className="flat-head">
-              <div>
-                <div className="muted">Długość cięcia</div>
-                <div className="flat-length">{fmt(analysis.flatLength)} mm</div>
+            {double && (
+              <div className="card double-note">
+                <b>Podwójna szyna.</b> Każdą szynę tnij i gnij według jej własnej tabeli. W gięciach szyna wewnętrzna ma
+                promień narzędzia, a zewnętrzna większy o grubość i odstęp, dzięki czemu obie do siebie przylegają, a
+                otwory wypadają na sobie.
               </div>
-              <div>
-                <div className="muted">Przekrój</div>
-                <div className="flat-val">{sectionLabel(bar.section)}</div>
-              </div>
-              <div>
-                <div className="muted">Liczba gięć</div>
-                <div className="flat-val">{analysis.bends.length}</div>
-              </div>
-              <div>
-                <div className="muted">Wymiary ramion</div>
-                <div className="flat-val">{DIMENSION_MODE_LABEL[bar.dimensionMode]}</div>
-              </div>
-            </div>
-            <div className="card">
-              <FlatPatternSvg bar={bar} analysis={analysis} settings={settings} />
-            </div>
-            <div className="card">
-              <h3>Tabela gięć dla operatora</h3>
-              <div className="table-scroll">
-                <BendTable analysis={analysis} settings={settings} />
-              </div>
-            </div>
+            )}
+            {assembly.parts.map((part) => (
+              <PartDocs key={part.index} part={part} double={double} settings={settings} />
+            ))}
           </div>
         )}
         {tab === 'settings' && <SettingsTab bar={bar} settings={settings} update={update} setSettings={setSettings} numpad={setNp} />}
@@ -177,13 +162,14 @@ export default function App() {
 
       <footer className={`statusbar ${errors ? 'has-errors' : warnings ? 'has-warnings' : ''}`}>
         <span>
-          Długość cięcia: <b>{fmt(analysis.flatLength)} mm</b>
+          Długość cięcia:{' '}
+          <b>{assembly.parts.map((p) => `${fmt(p.analysis.flatLength)}`).join(' / ')} mm</b>
         </span>
         <span>{sectionLabel(bar.section)}</span>
         <span>Wymiary {DIMENSION_MODE_LABEL[bar.dimensionMode]}</span>
         <span className="status-issues">
           {errors ? `⛔ ${errors} błąd(y)` : ''} {warnings ? `⚠ ${warnings} ostrzeżenie(a)` : ''}
-          {!issues.length && '✔ Szyna poprawna'}
+          {!issues.length && (double ? '✔ Szyny poprawne' : '✔ Szyna poprawna')}
         </span>
       </footer>
 
@@ -217,7 +203,7 @@ export default function App() {
         />
       )}
 
-      <PrintSheet bar={bar} settings={settings} snapshot={snapshot} issues={issues} />
+      <PrintSheet bar={bar} assembly={assembly} settings={settings} snapshot={snapshot} issues={issues} />
     </div>
   );
 }
@@ -467,25 +453,75 @@ function ProjectsModal({ currentId, onClose, onOpen }: { currentId: string; onCl
   );
 }
 
+function PartDocs({ part, double, settings }: { part: BarPart; double: boolean; settings: MachineSettings }) {
+  const { bar, analysis } = part;
+  return (
+    <section className="part-block">
+      <div className="flat-head">
+        {double && <div className={`part-title part-${part.index}`}>{part.label}</div>}
+        <div>
+          <div className="muted">Długość cięcia</div>
+          <div className="flat-length">{fmt(analysis.flatLength)} mm</div>
+        </div>
+        <div>
+          <div className="muted">Przekrój</div>
+          <div className="flat-val">{sectionLabel(bar.section)}</div>
+        </div>
+        <div>
+          <div className="muted">Gięcia / otwory</div>
+          <div className="flat-val">
+            {analysis.bends.length} / {analysis.holes.length}
+          </div>
+        </div>
+        <div>
+          <div className="muted">Wymiary ramion</div>
+          <div className="flat-val">{DIMENSION_MODE_LABEL[bar.dimensionMode]}</div>
+        </div>
+      </div>
+      <div className="card">
+        <FlatPatternSvg bar={bar} analysis={analysis} settings={settings} />
+      </div>
+      <div className="card">
+        <h3>Tabela gięć dla operatora{double ? ` – ${part.label}` : ''}</h3>
+        <div className="table-scroll">
+          <BendTable analysis={analysis} settings={settings} />
+        </div>
+        {analysis.holes.length > 0 && (
+          <>
+            <h3 className="mt">Otwory</h3>
+            <div className="table-scroll">
+              <HoleTable bar={bar} analysis={analysis} />
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function PrintSheet({
   bar,
+  assembly,
   settings,
   snapshot,
   issues,
 }: {
   bar: Busbar;
+  assembly: Assembly;
   settings: MachineSettings;
   snapshot: string | null;
   issues: Issue[];
 }) {
-  const analysis = useMemo(() => analyze(bar, settings), [bar, settings]);
+  const double = assembly.parts.length > 1;
+  const first = assembly.parts[0];
   return (
-    <div className="print-sheet">
+    <div className={`print-sheet ${double ? 'print-double' : ''}`}>
       <table className="print-header">
         <tbody>
           <tr>
             <td rowSpan={2} className="ph-title">
               {bar.name}
+              {double && <div className="ph-sub">podwójna szyna</div>}
             </td>
             <td>
               <span>Nr zlecenia</span>
@@ -496,14 +532,14 @@ function PrintSheet({
               <b>{sectionLabel(bar.section)}</b>
             </td>
             <td>
-              <span>Ilość</span>
+              <span>{double ? 'Ilość kompletów' : 'Ilość'}</span>
               <b>{bar.quantity} szt.</b>
             </td>
           </tr>
           <tr>
             <td>
-              <span>Długość cięcia</span>
-              <b className="ph-len">{fmt(analysis.flatLength)} mm</b>
+              <span>Długość cięcia{double ? ' (szyna 1 / szyna 2)' : ''}</span>
+              <b className="ph-len">{assembly.parts.map((p) => fmt(p.analysis.flatLength)).join(' / ')} mm</b>
             </td>
             <td>
               <span>Maszyna</span>
@@ -519,11 +555,22 @@ function PrintSheet({
       <div className="print-row">
         {snapshot && <img src={snapshot} className="print-3d" alt="Widok 3D" />}
         <div className="print-notes">
-          <BendTable analysis={analysis} settings={settings} />
+          {!double && (
+            <>
+              <BendTable analysis={first.analysis} settings={settings} />
+              <HoleTable bar={first.bar} analysis={first.analysis} />
+            </>
+          )}
           <div>
             Wymiary ramion: <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b> · K {settings.k} · koniec A oznaczony na
             zielono
           </div>
+          {double && (
+            <div>
+              Podwójna szyna: każdą szynę tnij i gnij według jej tabeli. Szyna wewnętrzna w gięciu ma promień narzędzia,
+              zewnętrzna większy o grubość i odstęp.
+            </div>
+          )}
           {issues.length > 0 && (
             <div className="print-issues">
               {issues.map((i, k) => (
@@ -535,8 +582,18 @@ function PrintSheet({
           )}
         </div>
       </div>
-      <h3>Rozwinięcie</h3>
-      <FlatPatternSvg bar={bar} analysis={analysis} settings={settings} width={1000} />
+      {assembly.parts.map((part) => (
+        <div key={part.index} className="print-part">
+          <h3>Rozwinięcie{double ? ` – ${part.label}` : ''}</h3>
+          <FlatPatternSvg bar={part.bar} analysis={part.analysis} settings={settings} width={1000} />
+          {double && (
+            <div className="print-tables">
+              <BendTable analysis={part.analysis} settings={settings} />
+              <HoleTable bar={part.bar} analysis={part.analysis} />
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

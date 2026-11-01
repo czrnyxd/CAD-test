@@ -1,8 +1,12 @@
 import * as THREE from 'three';
+import type { HoleInfo } from '../core/analyze';
+import type { BarPart } from '../core/assembly';
 import { sectionCorners, type BarPath } from '../core/geometry';
 import type { Busbar } from '../core/model';
 
 export const COPPER = new THREE.Color('#c87533');
+export const COPPER_2 = new THREE.Color('#a9612f');
+const HOLE_COLOR = '#24150a';
 export const COPPER_SELECTED = new THREE.Color('#ffcf6e');
 export const COPPER_ERROR = new THREE.Color('#d9534f');
 export const START_COLOR = new THREE.Color('#2ecc71');
@@ -19,7 +23,7 @@ export interface BarObject {
 export function buildBarObject(
   bar: Busbar,
   path: BarPath,
-  opts: { selected?: number | null; errorSteps?: Set<number> } = {},
+  opts: { selected?: number | null; errorSteps?: Set<number>; color?: THREE.Color; holes?: HoleInfo[] } = {},
 ): BarObject {
   const { width: W, thickness: T } = bar.section;
   const positions: number[] = [];
@@ -29,7 +33,7 @@ export function buildBarObject(
   const rings = path.samples.map((s) => sectionCorners(s, W, T));
 
   const colorFor = (step: number) =>
-    opts.selected === step ? COPPER_SELECTED : opts.errorSteps?.has(step) ? COPPER_ERROR : COPPER;
+    opts.selected === step ? COPPER_SELECTED : opts.errorSteps?.has(step) ? COPPER_ERROR : (opts.color ?? COPPER);
 
   // Faces: [cornerA, cornerB, normal getter]
   const faces: [number, number, (k: number) => THREE.Vector3][] = [
@@ -122,6 +126,32 @@ export function buildBarObject(
 
   const group = new THREE.Group();
   group.add(mesh, edges);
+
+  // Holes: dark decals on both faces of the bar.
+  const holeMat = new THREE.MeshBasicMaterial({
+    color: HOLE_COLOR,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+  const holeGeoms: THREE.BufferGeometry[] = [];
+  for (const h of opts.holes ?? []) {
+    const range = path.stepRanges[h.stepIndex];
+    if (!range) continue;
+    const f = path.samples[range[0]];
+    const g = new THREE.ShapeGeometry(slotShape(h.length, h.diameter), 24);
+    holeGeoms.push(g);
+    for (const sign of [1, -1]) {
+      const m = new THREE.Mesh(g, holeMat);
+      const pos = f.p.clone().addScaledVector(f.t, h.posOnStraight).addScaledVector(f.w, h.offset).addScaledVector(f.n, sign * (T / 2 + 0.05));
+      m.matrixAutoUpdate = false;
+      m.matrix.makeBasis(f.t, f.w, f.n).setPosition(pos);
+      m.userData.stepIndex = h.stepIndex;
+      group.add(m);
+    }
+  }
+
   return {
     group,
     mesh,
@@ -131,8 +161,44 @@ export function buildBarObject(
       mat.dispose();
       edgeGeom.dispose();
       edgeMat.dispose();
+      holeMat.dispose();
+      holeGeoms.forEach((g) => g.dispose());
     },
   };
+}
+
+/** Round hole (length ≤ diameter) or slot, centred at origin, length along X. */
+export function slotShape(length: number, diameter: number): THREE.Shape {
+  const r = diameter / 2;
+  const half = Math.max(0, length / 2 - r);
+  const s = new THREE.Shape();
+  if (half <= 0) {
+    s.absarc(0, 0, r, 0, Math.PI * 2, false);
+    return s;
+  }
+  s.moveTo(-half, -r);
+  s.lineTo(half, -r);
+  s.absarc(half, 0, r, -Math.PI / 2, Math.PI / 2, false);
+  s.lineTo(-half, r);
+  s.absarc(-half, 0, r, Math.PI / 2, (3 * Math.PI) / 2, false);
+  return s;
+}
+
+/** Build the 3D objects of all parts of an assembly. */
+export function buildPartObjects(
+  parts: BarPart[],
+  opts: { selected?: number | null; errorSteps?: Set<number> } = {},
+): BarObject[] {
+  return parts.map((part) => {
+    const o = buildBarObject(part.bar, part.path, {
+      ...opts,
+      color: part.index === 2 ? COPPER_2 : COPPER,
+      holes: part.analysis.holes,
+    });
+    o.group.position.y = part.offset;
+    o.group.updateMatrixWorld(true);
+    return o;
+  });
 }
 
 export function addLights(scene: THREE.Scene) {
@@ -181,21 +247,21 @@ export function fitOrtho(
 }
 
 /** Render an off-screen isometric picture of the bar (for the printout). */
-export function renderSnapshot(bar: Busbar, path: BarPath, width = 1200, height = 800): string {
+export function renderSnapshot(parts: BarPart[], bbox: THREE.Box3, width = 1200, height = 800): string {
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: false });
   renderer.setSize(width, height, false);
   renderer.setClearColor('#ffffff');
   const scene = new THREE.Scene();
   addLights(scene);
-  const obj = buildBarObject(bar, path);
-  scene.add(obj.group);
+  const objs = buildPartObjects(parts);
+  objs.forEach((o) => scene.add(o.group));
   const cam = new THREE.OrthographicCamera();
-  fitOrtho(cam, path.bbox, 'iso', width / height);
+  fitOrtho(cam, bbox, 'iso', width / height);
   cam.zoom = 1.6;
   cam.updateProjectionMatrix();
   renderer.render(scene, cam);
   const url = renderer.domElement.toDataURL('image/png');
-  obj.dispose();
+  objs.forEach((o) => o.dispose());
   renderer.dispose();
   renderer.forceContextLoss();
   return url;

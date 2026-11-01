@@ -2,15 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { fmt, type Analysis } from '../core/analyze';
-import { dirVector, keyPoints, type BarPath } from '../core/geometry';
+import { fmt } from '../core/analyze';
+import type { Assembly } from '../core/assembly';
+import { dirVector, keyPoints } from '../core/geometry';
 import { DIRECTION_ARROW, type Busbar } from '../core/model';
-import { addLights, buildBarObject, fitOrtho, type BarObject, type ViewName } from './scene';
+import { addLights, buildPartObjects, fitOrtho, type BarObject, type ViewName } from './scene';
 
 interface Props {
+  /** The project as edited (leg lengths shown in labels). */
   bar: Busbar;
-  path: BarPath;
-  analysis: Analysis;
+  assembly: Assembly;
   selected: number | null;
   errorSteps: Set<number>;
   onSelect: (i: number | null) => void;
@@ -22,7 +23,7 @@ interface Ctx {
   scene: THREE.Scene;
   camera: THREE.OrthographicCamera;
   controls: OrbitControls;
-  barObj?: BarObject;
+  barObjs: BarObject[];
   overlay: THREE.Group;
   grid: THREE.GridHelper;
   measureGroup: THREE.Group;
@@ -46,7 +47,10 @@ function disposeGroup(g: THREE.Group) {
   g.clear();
 }
 
-export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }: Props) {
+export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Props) {
+  const part1 = assembly.parts[0];
+  const { path, analysis } = part1;
+  const bbox = assembly.bbox;
   const hostRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<Ctx | null>(null);
   const [measure, setMeasure] = useState(false);
@@ -105,12 +109,12 @@ export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }
     const ro = new ResizeObserver(resize);
     ro.observe(host);
 
-    ctxRef.current = { renderer, labelRenderer, scene, camera, controls, overlay, grid, measureGroup, render };
+    ctxRef.current = { renderer, labelRenderer, scene, camera, controls, barObjs: [], overlay, grid, measureGroup, render };
     resize();
     return () => {
       ro.disconnect();
       controls.dispose();
-      ctxRef.current?.barObj?.dispose();
+      ctxRef.current?.barObjs.forEach((o) => o.dispose());
       disposeGroup(overlay);
       disposeGroup(measureGroup);
       renderer.dispose();
@@ -128,7 +132,7 @@ export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }
       dir: c.camera.position.clone().sub(c.controls.target).normalize(),
       up: c.camera.up.clone(),
     };
-    fitOrtho(c.camera, path.bbox, view, el.clientWidth / Math.max(1, el.clientHeight), c.controls.target);
+    fitOrtho(c.camera, bbox, view, el.clientWidth / Math.max(1, el.clientHeight), c.controls.target);
     c.controls.update();
     c.render();
   };
@@ -138,7 +142,7 @@ export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }
     const c = ctxRef.current;
     if (!c) return false;
     c.camera.updateMatrixWorld();
-    const { min, max } = path.bbox;
+    const { min, max } = bbox;
     for (const x of [min.x, max.x])
       for (const y of [min.y, max.y])
         for (const z of [min.z, max.z]) {
@@ -152,12 +156,23 @@ export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }
   useEffect(() => {
     const c = ctxRef.current;
     if (!c) return;
-    c.barObj && (c.scene.remove(c.barObj.group), c.barObj.dispose());
-    c.barObj = buildBarObject(bar, path, { selected, errorSteps });
-    c.scene.add(c.barObj.group);
+    c.barObjs.forEach((o) => (c.scene.remove(o.group), o.dispose()));
+    c.barObjs = buildPartObjects(assembly.parts, { selected, errorSteps });
+    c.barObjs.forEach((o) => c.scene.add(o.group));
     // Keep the floor grid just below the part so it never cuts through it.
-    c.grid.position.y = path.bbox.min.y - 1;
-    keyPts.current = keyPoints(path, bar.section.width, bar.section.thickness);
+    c.grid.position.y = bbox.min.y - 1;
+    // Snap points for measuring: section corners and hole centres (both faces) of every bar.
+    const { width: W, thickness: T } = bar.section;
+    keyPts.current = assembly.parts.flatMap((part) => {
+      const shift = new THREE.Vector3(0, part.offset, 0);
+      const pts = keyPoints(part.path, W, T);
+      for (const h of part.analysis.holes) {
+        const f = part.path.samples[part.path.stepRanges[h.stepIndex][0]];
+        const c0 = f.p.clone().addScaledVector(f.t, h.posOnStraight).addScaledVector(f.w, h.offset);
+        pts.push(c0.clone().addScaledVector(f.n, T / 2), c0.clone().addScaledVector(f.n, -T / 2));
+      }
+      return pts.map((p) => p.add(shift));
+    });
 
     // Overlay: dimension labels and the direction arrow of the selected bend.
     disposeGroup(c.overlay);
@@ -181,9 +196,13 @@ export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }
           c.overlay.add(l);
         }
       });
-      const start = label('A', 'lbl-start');
-      start.position.copy(path.samples[0].p).addScaledVector(path.samples[0].t, -bar.section.width * 0.6);
-      c.overlay.add(start);
+      const double = assembly.parts.length > 1;
+      for (const part of assembly.parts) {
+        const s0 = part.path.samples[0];
+        const start = label(double ? `A${part.index}` : 'A', 'lbl-start');
+        start.position.copy(s0.p).addScaledVector(s0.t, -bar.section.width * 0.6).add(new THREE.Vector3(0, part.offset, 0));
+        c.overlay.add(start);
+      }
     }
     if (selected !== null && bar.steps[selected]?.kind === 'bend') {
       const s = bar.steps[selected];
@@ -209,7 +228,7 @@ export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }
       setView();
     }
     c.render();
-  }, [bar, path, analysis, selected, errorSteps, showDims]);
+  }, [bar, assembly, selected, errorSteps, showDims]);
 
   // Measurement visuals.
   useEffect(() => {
@@ -240,7 +259,7 @@ export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }
       }
     }
     c.render();
-  }, [measure, points, path, bar.section.thickness]);
+  }, [measure, points, assembly, bar.section.thickness]);
 
   // Tap handling (tap = pointer down/up without moving).
   useEffect(() => {
@@ -278,9 +297,14 @@ export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }
       }
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1), c.camera);
-      const hit = c.barObj ? ray.intersectObject(c.barObj.mesh)[0] : undefined;
-      if (hit && hit.faceIndex != null) onSelect(c.barObj!.triangleStep[hit.faceIndex] ?? null);
-      else onSelect(null);
+      let best: { dist: number; step: number } | null = null;
+      for (const o of c.barObjs) {
+        const hit = ray.intersectObject(o.mesh)[0];
+        if (hit && hit.faceIndex != null && (!best || hit.distance < best.dist)) {
+          best = { dist: hit.distance, step: o.triangleStep[hit.faceIndex] };
+        }
+      }
+      onSelect(best ? best.step : null);
     };
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointerup', onUp);
@@ -290,7 +314,7 @@ export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }
     };
   }, [measure, onSelect]);
 
-  const size = path.bbox.getSize(new THREE.Vector3());
+  const size = bbox.getSize(new THREE.Vector3());
   const d = points.length === 2 ? points[1].clone().sub(points[0]) : null;
 
   return (

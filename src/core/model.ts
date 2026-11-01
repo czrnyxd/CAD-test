@@ -11,11 +11,25 @@ export interface Section {
   material: 'Cu' | 'Al';
 }
 
+export interface Hole {
+  id: string;
+  /** Centre position along the leg, measured from the start of the leg as dimensioned
+   *  (bar end A for the first leg, the previous virtual sharp for the others), mm. */
+  position: number;
+  /** Lateral offset of the centre from the bar axis across the width (+ = towards side w), mm. */
+  offset: number;
+  /** Hole diameter (slot width), mm. */
+  diameter: number;
+  /** Total slot length along the bar; 0 or ≤ diameter = round hole, mm. */
+  slot: number;
+}
+
 export interface StraightStep {
   id: string;
   kind: 'straight';
   /** Leg length as dimensioned (to virtual sharps, according to dimensionMode). */
   length: number;
+  holes?: Hole[];
 }
 
 export interface BendStep {
@@ -30,6 +44,15 @@ export interface BendStep {
 
 export type Step = StraightStep | BendStep;
 
+/** Second bar bent together with the first one so that both nest (stacked through the thickness). */
+export interface DoubleConfig {
+  enabled: boolean;
+  /** Side of bar 2 relative to bar 1 at end A: above = towards bend direction "up". */
+  side: 'above' | 'below';
+  /** Gap between the bars, mm (0 = tight). */
+  gap: number;
+}
+
 export interface Busbar {
   id: string;
   name: string;
@@ -38,6 +61,7 @@ export interface Busbar {
   section: Section;
   dimensionMode: DimensionMode;
   steps: Step[];
+  double?: DoubleConfig;
   updatedAt: string;
 }
 
@@ -82,9 +106,17 @@ export function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${idCounter}`;
 }
 
-export function straight(length: number): StraightStep {
-  return { id: newId(), kind: 'straight', length };
+export function straight(length: number, holes?: Omit<Hole, 'id'>[]): StraightStep {
+  const st: StraightStep = { id: newId(), kind: 'straight', length };
+  if (holes?.length) st.holes = holes.map((h) => ({ ...h, id: newId() }));
+  return st;
 }
+
+export function hole(position: number, diameter: number, slot = 0, offset = 0): Hole {
+  return { id: newId(), position, offset, diameter, slot };
+}
+
+export const DEFAULT_DOUBLE: DoubleConfig = { enabled: false, side: 'above', gap: 0 };
 
 export function bend(angle: number, direction: Direction, radius: number): BendStep {
   return { id: newId(), kind: 'bend', angle, direction, radius };
@@ -128,8 +160,16 @@ export function migrateBusbar(raw: Busbar, settings: MachineSettings): Busbar {
   for (const s of raw.steps as unknown as Record<string, unknown>[]) {
     if (s.kind === 'straight') {
       const prev = steps[steps.length - 1];
-      if (prev?.kind === 'straight') prev.length += Number(s.length) || 0;
-      else steps.push({ id: String(s.id ?? newId()), kind: 'straight', length: Number(s.length) || 0 });
+      const holes = Array.isArray(s.holes) ? (s.holes as Hole[]).map((h) => ({ ...h })) : undefined;
+      if (prev?.kind === 'straight') {
+        const shift = prev.length;
+        prev.length += Number(s.length) || 0;
+        if (holes?.length) prev.holes = [...(prev.holes ?? []), ...holes.map((h) => ({ ...h, position: h.position + shift }))];
+      } else {
+        const st: StraightStep = { id: String(s.id ?? newId()), kind: 'straight', length: Number(s.length) || 0 };
+        if (holes?.length) st.holes = holes;
+        steps.push(st);
+      }
     } else if (s.kind === 'bend') {
       const edge = s.plane === 'edge';
       steps.push({

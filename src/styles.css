@@ -97,7 +97,9 @@ button.accent.on { background: #e8590c; border-color: #e8590c; }
 .lbl-measure { background: #e8590c; color: #fff; font-size: 16px; }
 
 /* steps panel */
-.steps { display: grid; grid-template-rows: 1fr auto auto; border-left: 1px solid var(--line); background: var(--panel); min-height: 0; }
+.steps { display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--panel); min-height: 0; }
+.steps > * { flex: none; }
+.steps > .steps-list { flex: 1 1 0; min-height: 0; }
 .steps-list { overflow-y: auto; padding: 10px; display: grid; gap: 8px; align-content: start; }
 .step {
   border: 2px solid var(--line); border-radius: var(--radius); padding: 8px 10px; background: #fff;
@@ -130,6 +132,27 @@ button.accent.on { background: #e8590c; border-color: #e8590c; }
 .steps-add button { min-height: 64px; font-weight: 700; font-size: 18px; line-height: 1.15; padding: 4px 6px; }
 .steps-add b { font-size: 24px; color: var(--accent); margin-right: 6px; }
 .steps-hint { font-size: 12px; color: var(--muted); padding: 0 12px 10px; }
+
+/* double bar + holes */
+.pack { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 10px 0; align-items: center; }
+.pack-hint { font-size: 12px; color: var(--muted); padding: 4px 12px 0; }
+.hole-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 4px 0 0 6px; border-top: 1px dashed var(--line); }
+.hole-row { flex-wrap: nowrap; }
+.hole-row .chip { min-height: 44px; padding: 2px 8px; flex: 1 1 0; min-width: 0; }
+.hole-row .chip-label { font-size: 10px; white-space: nowrap; }
+.hole-row .chip-value { font-size: 15px; }
+.hole-row .del { min-width: 36px; flex: none; }
+.hole-badge { font-weight: 800; font-size: 13px; color: #fff; background: #24150a; border-radius: 6px; padding: 3px 6px; }
+.add-hole { min-height: 40px; justify-self: start; font-size: 14px; font-weight: 600; color: var(--accent); background: #f4f8ff; border-color: #cfe0ff; }
+.numpad-sign { min-height: 48px; font-weight: 700; }
+.part-block { display: grid; gap: 12px; }
+.part-title { font-size: 22px; font-weight: 800; padding: 6px 12px; border-radius: 10px; background: #c87533; color: #fff; align-self: center; }
+.part-title.part-2 { background: #a9612f; }
+.double-note { background: #fff8ee; border-color: #f0c38e; font-size: 15px; }
+h3.mt { margin-top: 16px; }
+.bend-table .num-badge.hole { background: #24150a; }
+.t-hole { font-size: 12px; font-weight: 700; fill: #24150a; }
+.dim-hole text { fill: #4a3626; }
 
 /* status bar */
 .statusbar { display: flex; gap: 24px; padding: 10px 16px; background: #fff; border-top: 1px solid var(--line); font-size: 16px; align-items: center; }
@@ -232,6 +255,13 @@ button.danger { background: var(--error); color: #fff; border-color: var(--error
   .print-3d { width: 38%; max-height: 70mm; object-fit: contain; border: 1px solid #ccc; }
   .print-notes { flex: 1; font-size: 9pt; display: grid; gap: 4px; align-content: start; }
   .print-issues { margin-top: 6px; color: #a00; }
+  .ph-sub { font-size: 10pt; font-weight: 600; color: #a04a00; }
+  .print-part { page-break-inside: avoid; }
+  .print-double .print-3d { max-height: 42mm; width: 30%; }
+  .print-double .flat-svg { height: 58mm; }
+  .print-double h3 { margin: 4px 0 2px; font-size: 11pt; }
+  .print-double .bend-table th, .print-double .bend-table td { padding: 2px 6px; }
+  .print-tables { display: grid; grid-template-columns: 1fr; gap: 4px; }
   .bend-table { font-size: 10pt; }
   .bend-table td.big { font-size: 13pt; }
   .bend-table th, .bend-table td { padding: 4px 6px; border-bottom: 1px solid #999; }
@@ -259,7 +289,7 @@ button.danger { background: var(--error); color: #fff; border-color: var(--error
   .tabs button { flex: 1; font-size: 14px; padding: 0 4px; }
   .top-actions { grid-column: 1 / -1; margin-left: 0; display: grid; grid-template-columns: 44px 44px 1fr 1fr 1fr; }
   .top-actions button[title] { min-width: 0; font-size: 20px; }
-  .model-tab { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .model-tab { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); }
   .viewer-toolbar { left: 6px; right: 6px; top: 6px; padding: 4px; gap: 4px; flex-wrap: nowrap; overflow-x: auto; }
   .viewer-toolbar button { min-height: 40px; padding: 0 10px; white-space: nowrap; flex: none; }
   .viewer-info { left: 6px; bottom: 6px; font-size: 12px; padding: 4px 8px; }
@@ -274,6 +304,8 @@ button.danger { background: var(--error); color: #fff; border-color: var(--error
   .steps-add { padding: 6px; gap: 4px; }
   .steps-add button { min-height: 50px; font-size: 16px; }
   .steps-hint { display: none; }
+  .pack { padding: 6px 6px 0; }
+  .pack .seg button { min-height: 40px; }
   .statusbar { gap: 10px; padding: 6px 10px; font-size: 13px; }
   .statusbar b { font-size: 16px; }
   .statusbar > span:nth-child(2), .statusbar > span:nth-child(3) { display: none; }

@@ -22,8 +22,12 @@ export function NumPad({ req, onClose }: { req: NumPadRequest; onClose: () => vo
     setText((t) => {
       const base = fresh ? '' : t;
       if (k === '⌫') return fresh ? '' : t.slice(0, -1);
+      if (k === '±') {
+        if (fresh) return '-';
+        return t.startsWith('-') ? t.slice(1) : `-${t}`;
+      }
       if (k === ',' && base.includes(',')) return base;
-      if (k === ',' && base === '') return '0,';
+      if (k === ',' && (base === '' || base === '-')) return `${base}0,`;
       if (base.replace(',', '').length >= 7) return base;
       return base + k;
     });
@@ -82,6 +86,11 @@ export function NumPad({ req, onClose }: { req: NumPadRequest; onClose: () => vo
             </button>
           ))}
         </div>
+        {req.min !== undefined && req.min < 0 && (
+          <button className="numpad-sign" onClick={() => press('±')}>
+            ± zmień znak
+          </button>
+        )}
         <div className="numpad-actions">
           <button className="btn-secondary" onClick={onClose}>
             Anuluj

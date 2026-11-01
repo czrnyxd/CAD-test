@@ -33,8 +33,23 @@ export interface BendInfo {
   position: number;
 }
 
+export interface HoleInfo {
+  no: number;
+  stepIndex: number;
+  holeId: string;
+  /** Centre position along the leg's straight (tangent) part, from its start, mm. */
+  posOnStraight: number;
+  /** Centre position on the flat bar from end A, mm. */
+  flatPos: number;
+  offset: number;
+  diameter: number;
+  /** Slot length along the bar (= diameter for a round hole), mm. */
+  length: number;
+}
+
 export interface Analysis {
   segments: FlatSegment[];
+  holes: HoleInfo[];
   /** Net straight (tangent-to-tangent) length for each step index; undefined for non-straight steps. */
   netStraight: (number | undefined)[];
   bends: BendInfo[];
@@ -121,6 +136,55 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
     pos += len;
   });
 
+  // Holes (on straight parts only).
+  const holes: HoleInfo[] = [];
+  steps.forEach((s, i) => {
+    if (s.kind !== 'straight' || !s.holes?.length) return;
+    const before = steps[i - 1]?.kind === 'bend' ? setbacks[i - 1] : 0;
+    const net = Math.max(0, netStraight[i] ?? 0);
+    const seg = segments[i];
+    for (const h of s.holes) {
+      const length = Math.max(h.slot || 0, h.diameter);
+      const posOnStraight = h.position - before;
+      holes.push({
+        no: 0,
+        stepIndex: i,
+        holeId: h.id,
+        posOnStraight,
+        flatPos: seg.flatStart + posOnStraight,
+        offset: h.offset,
+        diameter: h.diameter,
+        length,
+      });
+      const lo = posOnStraight - length / 2;
+      const hi = posOnStraight + length / 2;
+      if (!(h.diameter > 0)) {
+        issues.push({ level: 'error', stepIndex: i, message: 'Średnica otworu musi być większa od 0.' });
+      } else if (lo < 0 || hi > net) {
+        issues.push({
+          level: 'error',
+          stepIndex: i,
+          message: `Otwór ${holeLabel(h)} wychodzi poza prostą część odcinka (0–${fmt(net)} mm od ${before ? 'końca łuku' : 'końca szyny'}).`,
+        });
+      } else {
+        const margin = 1.5 * section.thickness;
+        const nearPrev = steps[i - 1]?.kind === 'bend' && lo < margin;
+        const nearNext = steps[i + 1]?.kind === 'bend' && net - hi < margin;
+        if (nearPrev || nearNext) {
+          issues.push({
+            level: 'warning',
+            stepIndex: i,
+            message: `Otwór ${holeLabel(h)} bliżej niż ${fmt(margin)} mm od gięcia – może się zdeformować.`,
+          });
+        }
+      }
+      if (Math.abs(h.offset) + h.diameter / 2 > section.width / 2) {
+        issues.push({ level: 'error', stepIndex: i, message: `Otwór ${holeLabel(h)} wychodzi poza szerokość szyny.` });
+      }
+    }
+  });
+  holes.sort((a, b) => a.flatPos - b.flatPos).forEach((h, k) => (h.no = k + 1));
+
   const flatLength = pos;
   if (flatLength > settings.maxLength) {
     issues.push({
@@ -129,7 +193,7 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
     });
   }
 
-  return { segments, netStraight, bends, flatLength, issues };
+  return { segments, holes, netStraight, bends, flatLength, issues };
 }
 
 function makeBend(
@@ -159,6 +223,10 @@ function makeBend(
     arcEnd: end,
     position,
   };
+}
+
+function holeLabel(h: { diameter: number; slot: number }): string {
+  return h.slot > h.diameter ? `${fmt(h.diameter)}×${fmt(h.slot)}` : `Ø${fmt(h.diameter)}`;
 }
 
 /** Format a number in Polish style with up to 1 decimal place. */

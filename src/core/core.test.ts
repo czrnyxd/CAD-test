@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { analyze } from './analyze';
 import { bendAllowance, bendDeduction, setback } from './bending';
+import { buildAssembly } from './assembly';
 import { buildPath, collisionIssues } from './geometry';
 import { Vector3 } from 'three';
 import { DEFAULT_SETTINGS, bend, migrateBusbar, newBusbar, straight, type Busbar, type MachineSettings, type Section } from './model';
@@ -117,5 +118,69 @@ describe('migration of old projects', () => {
     expect(bar.steps.map((s) => s.kind)).toEqual(['straight', 'bend', 'straight']);
     expect(bar.steps[0]).toMatchObject({ length: 150 });
     expect(bar.steps[1]).toMatchObject({ direction: 'down', radius: settings.radius });
+  });
+});
+
+describe('holes', () => {
+  it('hole position on the flat bar', () => {
+    const bar = newBusbar(S40x10, [
+      straight(100, [{ position: 30, offset: 0, diameter: 13, slot: 0 }]),
+      bend(90, 'up', 10),
+      straight(150, [{ position: 100, offset: 5, diameter: 13, slot: 20 }]),
+    ]);
+    const an = analyze(bar, settings);
+    expect(an.holes).toHaveLength(2);
+    expect(an.holes[0].flatPos).toBeCloseTo(30, 6);
+    // second leg: straight part starts after setback 20, flat start = 80 + BA
+    expect(an.holes[1].flatPos).toBeCloseTo(80 + bendAllowance(90, 10, 0.4, 10) + (100 - 20), 6);
+    expect(an.holes[1].length).toBe(20);
+    expect(an.issues).toHaveLength(0);
+  });
+
+  it('reports hole inside the bend zone', () => {
+    const bar = newBusbar(S40x10, [straight(100, [{ position: 95, offset: 0, diameter: 13, slot: 0 }]), bend(90, 'up', 10), straight(100)]);
+    expect(analyze(bar, settings).issues.some((i) => i.level === 'error' && i.stepIndex === 0)).toBe(true);
+  });
+
+  it('reports hole outside the width', () => {
+    const bar = newBusbar(S40x10, [straight(100, [{ position: 50, offset: 15, diameter: 13, slot: 0 }])]);
+    expect(analyze(bar, settings).issues.some((i) => i.level === 'error')).toBe(true);
+  });
+});
+
+describe('double bar', () => {
+  const L = (side: 'above' | 'below', gap = 0) => ({
+    ...newBusbar(S40x10, [
+      straight(200, [{ position: 50, offset: 0, diameter: 13, slot: 0 }]),
+      bend(90, 'up', 10),
+      straight(150, [{ position: 100, offset: 0, diameter: 13, slot: 0 }]),
+    ]),
+    double: { enabled: true, side, gap },
+  });
+
+  it('inner bar gets tool radius, outer R + T + gap', () => {
+    const asm = buildAssembly(L('above', 2), settings);
+    const [p1, p2] = asm.parts;
+    expect((p1.bar.steps[1] as { radius: number }).radius).toBeCloseTo(22, 6); // bar 1 is outer
+    expect((p2.bar.steps[1] as { radius: number }).radius).toBeCloseTo(10, 6); // bar 2 inside the bend
+    expect(p2.analysis.flatLength).toBeLessThan(p1.analysis.flatLength);
+  });
+
+  it('bars stay parallel at distance T + gap and holes line up', () => {
+    for (const side of ['above', 'below'] as const) {
+      const gap = 3;
+      const asm = buildAssembly(L(side, gap), settings);
+      const [p1, p2] = asm.parts;
+      const e1 = p1.path.samples[p1.path.samples.length - 1];
+      const e2 = p2.path.samples[p2.path.samples.length - 1];
+      const end2 = e2.p.clone().add(new Vector3(0, p2.offset, 0));
+      const diff = end2.sub(e1.p);
+      // end points differ only along the local thickness normal by ±(T + gap)
+      expect(Math.abs(diff.dot(e1.n))).toBeCloseTo(10 + gap, 6);
+      expect(diff.dot(e1.t)).toBeCloseTo(0, 6);
+      // holes are at the same place on the straight parts
+      p1.analysis.holes.forEach((h, k) => expect(p2.analysis.holes[k].posOnStraight).toBeCloseTo(h.posOnStraight, 6));
+      expect(asm.issues.filter((i) => i.level === 'error')).toHaveLength(0);
+    }
   });
 });
