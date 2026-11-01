@@ -26,6 +26,7 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
   const yBarBot = yBarTop + barH;
   const yChain = yBarTop - 22;
   const Y = (acrossMm: number) => yBarTop + (acrossMm / W) * barH; // 0 = upper edge of the drawing
+  const holeScale = Math.min(scale, barH / W);
 
   // Positions for chain dimensions: ends and bend lines.
   const marks = [0, ...bends.map((b) => b.position), L].sort((a, b) => a - b);
@@ -77,11 +78,18 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
       {holes.map((h) => {
         const cx = X(h.flatPos);
         const cy = Y(W / 2 + h.offset);
-        const rx = Math.max(2.5, (h.length / 2) * scale);
-        const ry = Math.max(2.5, (h.diameter / 2 / W) * barH);
+        // The drawing is not to scale (length and width use different scales), so the hole symbol
+        // uses one common scale: round holes stay circles, slots keep their length/width ratio.
+        const r = Math.max(4, (h.diameter / 2) * holeScale);
+        const rx = h.length > h.diameter ? r * (h.length / h.diameter) : r;
+        const ry = r;
         return (
           <g key={`h${h.no}`}>
-            <rect x={cx - rx} y={cy - ry} width={2 * rx} height={2 * ry} rx={Math.min(rx, ry)} fill="#fff" stroke="#24150a" strokeWidth="1.4" />
+            {rx > ry ? (
+              <rect x={cx - rx} y={cy - ry} width={2 * rx} height={2 * ry} rx={ry} fill="#fff" stroke="#24150a" strokeWidth="1.4" />
+            ) : (
+              <circle cx={cx} cy={cy} r={r} fill="#fff" stroke="#24150a" strokeWidth="1.4" />
+            )}
             <line x1={cx - rx - 4} y1={cy} x2={cx + rx + 4} y2={cy} stroke="#24150a" strokeWidth="0.6" />
             <line x1={cx} y1={cy - ry - 4} x2={cx} y2={cy + ry + 4} stroke="#24150a" strokeWidth="0.6" />
             <text x={cx + rx + 3} y={cy - ry - 2} className="t-hole">
