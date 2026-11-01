@@ -20,6 +20,15 @@ import { StepList } from './ui/StepList';
 import { Viewer3D } from './ui/Viewer3D';
 
 type Tab = 'model' | 'flat' | 'settings';
+
+/** Running inside an iframe (e.g. an embedded preview): printing and downloads are blocked there. */
+const IN_FRAME = (() => {
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+})();
 type Modal = null | 'new' | 'projects';
 
 export default function App() {
@@ -28,6 +37,12 @@ export default function App() {
   const [modal, setModal] = useState<Modal>(null);
   const [np, setNp] = useState<NumPadRequest | null>(null);
   const [snapshot, setSnapshot] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const analysis = useMemo(() => analyze(bar, settings), [bar, settings]);
   const path = useMemo(() => buildPath(bar, analysis), [bar, analysis]);
@@ -51,6 +66,10 @@ export default function App() {
   }, [undo, redo]);
 
   const print = () => {
+    if (IN_FRAME) {
+      setToast('Drukowanie nie działa w podglądzie osadzonym. Otwórz aplikację w osobnej karcie przeglądarki.');
+      return;
+    }
     setSnapshot(renderSnapshot(bar, path));
     setTimeout(() => window.print(), 150);
   };
@@ -148,7 +167,9 @@ export default function App() {
             </div>
             <div className="card">
               <h3>Tabela gięć dla operatora</h3>
-              <BendTable analysis={analysis} settings={settings} />
+              <div className="table-scroll">
+                <BendTable analysis={analysis} settings={settings} />
+              </div>
             </div>
           </div>
         )}
@@ -168,6 +189,11 @@ export default function App() {
       </footer>
 
       {np && <NumPad req={np} onClose={() => setNp(null)} />}
+      {toast && (
+        <div className="toast" onClick={() => setToast(null)}>
+          {toast}
+        </div>
+      )}
       {modal === 'new' && (
         <NewModal
           current={bar.section}
@@ -357,6 +383,8 @@ function ProjectsModal({ currentId, onClose, onOpen }: { currentId: string; onCl
   const [projects, setProjects] = useState(() => loadProjects());
   const list = Object.values(projects).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const [q, setQ] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
   const filtered = list.filter((p) => `${p.name} ${p.orderNo}`.toLowerCase().includes(q.toLowerCase()));
   return (
     <div className="modal-backdrop" onPointerDown={onClose}>
@@ -376,24 +404,36 @@ function ProjectsModal({ currentId, onClose, onOpen }: { currentId: string; onCl
               <button onClick={() => onOpen(duplicateBar(p))}>Kopiuj</button>
               <button
                 disabled={p.id === currentId}
+                className={pendingDelete === p.id ? 'danger' : ''}
                 onClick={() => {
-                  if (!confirm(`Usunąć projekt „${p.name}”?`)) return;
+                  if (pendingDelete !== p.id) return setPendingDelete(p.id);
                   deleteProject(p.id);
+                  setPendingDelete(null);
                   setProjects(loadProjects());
                 }}
               >
-                🗑
+                {pendingDelete === p.id ? 'Na pewno?' : '🗑'}
               </button>
             </div>
           ))}
           {!filtered.length && <p className="muted">Brak projektów.</p>}
         </div>
+        {msg && <div className="muted">{msg}</div>}
         <div className="modal-actions">
           <button
             className="btn-secondary"
-            onClick={() => {
+            onClick={async () => {
               const cur = projects[currentId];
               if (!cur) return;
+              if (IN_FRAME) {
+                try {
+                  await navigator.clipboard.writeText(JSON.stringify(cur, null, 2));
+                  setMsg('Projekt skopiowany do schowka jako JSON.');
+                } catch {
+                  setMsg('Nie udało się skopiować – otwórz aplikację w osobnej karcie.');
+                }
+                return;
+              }
               const blob = new Blob([JSON.stringify(cur, null, 2)], { type: 'application/json' });
               const a = document.createElement('a');
               a.href = URL.createObjectURL(blob);
@@ -402,7 +442,7 @@ function ProjectsModal({ currentId, onClose, onOpen }: { currentId: string; onCl
               URL.revokeObjectURL(a.href);
             }}
           >
-            Eksport bieżącego (JSON)
+            {IN_FRAME ? 'Kopiuj bieżący (JSON)' : 'Eksport bieżącego (JSON)'}
           </button>
           <label className="btn-secondary file-btn">
             Import JSON
@@ -417,7 +457,7 @@ function ProjectsModal({ currentId, onClose, onOpen }: { currentId: string; onCl
                   if (!b.steps || !b.section) throw new Error('format');
                   onOpen(duplicateBar({ ...b, name: b.name.replace(/ \(kopia\)$/, '') }));
                 } catch {
-                  alert('Nieprawidłowy plik projektu.');
+                  setMsg('Nieprawidłowy plik projektu.');
                 }
               }}
             />

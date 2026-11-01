@@ -140,7 +140,8 @@ button.accent.on { background: #e8590c; border-color: #e8590c; }
 .statusbar.has-warnings .status-issues { color: #9a6700; }
 
 /* flat tab */
-.flat-tab, .settings-tab { height: 100%; overflow-y: auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+.flat-tab, .settings-tab { height: 100%; overflow-y: auto; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
+.table-scroll { overflow-x: auto; }
 .card { background: #fff; border-radius: var(--radius); border: 1px solid var(--line); padding: 16px; }
 .card h3 { margin: 0 0 12px; }
 .flat-head { display: flex; gap: 40px; align-items: end; padding: 0 4px; }
@@ -193,7 +194,7 @@ button.accent.on { background: #e8590c; border-color: #e8590c; }
 .file-btn input { display: none; }
 
 /* numpad */
-.numpad { background: #fff; border-radius: 20px; padding: 18px; width: 380px; display: grid; gap: 10px; }
+.numpad { background: #fff; border-radius: 20px; padding: 18px; width: min(380px, 96vw); display: grid; gap: 10px; }
 .numpad-title { font-weight: 700; font-size: 17px; }
 .numpad-display { font-size: 44px; font-weight: 800; text-align: right; padding: 8px 14px; border-radius: 12px; background: #f1f4f7; border: 2px solid var(--accent); }
 .numpad-display.fresh { color: var(--muted); }
@@ -207,6 +208,12 @@ button.accent.on { background: #e8590c; border-color: #e8590c; }
 .numpad-keys .key-back { background: #eef1f4; }
 .numpad-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .numpad-actions button { min-height: 60px; font-size: 20px; }
+
+button.danger { background: var(--error); color: #fff; border-color: var(--error); }
+.toast {
+  position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%); z-index: 60; max-width: min(520px, 92vw);
+  background: #1f2933; color: #fff; padding: 12px 16px; border-radius: 12px; font-size: 15px; box-shadow: 0 4px 16px rgba(0,0,0,.3);
+}
 
 /* print */
 .print-sheet { display: none; }
@@ -241,4 +248,48 @@ button.accent.on { background: #e8590c; border-color: #e8590c; }
   .model-tab { grid-template-columns: 1fr; grid-template-rows: 1fr 45%; }
   .steps { border-left: none; border-top: 1px solid var(--line); }
   .topbar { flex-wrap: wrap; }
+}
+
+/* phone */
+@media (max-width: 640px) {
+  button { min-height: 44px; font-size: 15px; padding: 0 10px; }
+  .topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding: 6px 8px; }
+  .name-input { max-width: none; min-width: 0; height: 42px; font-size: 16px; }
+  .section-select { height: 42px; font-size: 15px; }
+  .tabs { grid-column: 1 / -1; }
+  .tabs button { flex: 1; font-size: 14px; padding: 0 4px; }
+  .top-actions { grid-column: 1 / -1; margin-left: 0; display: grid; grid-template-columns: 44px 44px 1fr 1fr 1fr; }
+  .top-actions button[title] { min-width: 0; font-size: 20px; }
+  .model-tab { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .viewer-toolbar { left: 6px; right: 6px; top: 6px; padding: 4px; gap: 4px; flex-wrap: nowrap; overflow-x: auto; }
+  .viewer-toolbar button { min-height: 40px; padding: 0 10px; white-space: nowrap; flex: none; }
+  .viewer-info { left: 6px; bottom: 6px; font-size: 12px; padding: 4px 8px; }
+  .measure-panel { right: 6px; bottom: 6px; min-width: 0; padding: 8px 10px; font-size: 12px; }
+  .measure-big { font-size: 24px; }
+  .lbl { font-size: 11px; padding: 2px 5px; }
+  .steps-list { padding: 6px; gap: 6px; }
+  .step { padding: 6px 8px; gap: 4px; }
+  .seg button { min-height: 44px; }
+  .seg button.dir { min-width: 44px; font-size: 20px; }
+  .chip-big .chip-value { font-size: 18px; }
+  .steps-add { padding: 6px; gap: 4px; }
+  .steps-add button { min-height: 50px; font-size: 13px; }
+  .steps-add b { font-size: 16px; display: inline; }
+  .steps-hint { display: none; }
+  .statusbar { gap: 10px; padding: 6px 10px; font-size: 13px; }
+  .statusbar b { font-size: 16px; }
+  .statusbar > span:nth-child(2), .statusbar > span:nth-child(3) { display: none; }
+  .flat-tab, .settings-tab { padding: 8px; gap: 8px; }
+  .flat-head { gap: 16px; flex-wrap: wrap; }
+  .flat-length { font-size: 28px; }
+  .flat-val { font-size: 16px; }
+  .card { padding: 10px; }
+  .bend-table { font-size: 13px; }
+  .bend-table td.big { font-size: 16px; }
+  .bend-table th, .bend-table td { padding: 6px 4px; }
+  .template-grid { grid-template-columns: repeat(2, 1fr); }
+  .modal { padding: 14px; }
+  .numpad { padding: 12px; gap: 8px; }
+  .numpad-display { font-size: 34px; }
+  .numpad-keys button { min-height: 54px; font-size: 24px; }
 }

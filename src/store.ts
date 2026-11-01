@@ -15,9 +15,25 @@ const LS_SETTINGS = 'busbar.settings.v1';
 const LS_CURRENT = 'busbar.current.v1';
 const HISTORY_LIMIT = 200;
 
+// Storage may be missing or throw (private mode, sandboxed frames) – never let it break the app.
+function lsGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function lsSet(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* ignore */
+  }
+}
+
 function load<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = lsGet(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
@@ -31,20 +47,20 @@ export function loadProjects(): Record<string, Busbar> {
 function saveProject(bar: Busbar) {
   const all = loadProjects();
   all[bar.id] = bar;
-  localStorage.setItem(LS_PROJECTS, JSON.stringify(all));
-  localStorage.setItem(LS_CURRENT, bar.id);
+  lsSet(LS_PROJECTS, JSON.stringify(all));
+  lsSet(LS_CURRENT, bar.id);
 }
 
 export function deleteProject(id: string) {
   const all = loadProjects();
   delete all[id];
-  localStorage.setItem(LS_PROJECTS, JSON.stringify(all));
+  lsSet(LS_PROJECTS, JSON.stringify(all));
 }
 
 function initialState(): { bar: Busbar; settings: MachineSettings } {
   const settings = { ...DEFAULT_SETTINGS, ...load<Partial<MachineSettings>>(LS_SETTINGS, {}) };
   const projects = loadProjects();
-  const currentId = localStorage.getItem(LS_CURRENT);
+  const currentId = lsGet(LS_CURRENT);
   const bar =
     (currentId && projects[currentId]) ||
     newBusbar(SECTIONS.find((s) => s.width === 40 && s.thickness === 10)!, TEMPLATES[1].build(settings), 'Szyna L');
@@ -95,7 +111,7 @@ export const useStore = create<AppState>((set, get) => ({
   select: (i) => set({ selected: i }),
   setSettings: (s) => {
     const settings = { ...get().settings, ...s };
-    localStorage.setItem(LS_SETTINGS, JSON.stringify(settings));
+    lsSet(LS_SETTINGS, JSON.stringify(settings));
     set({ settings });
   },
   open: (bar) => set({ bar, past: [], future: [], selected: null }),
