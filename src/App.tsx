@@ -4,6 +4,7 @@ import { buildPath, collisionIssues } from './core/geometry';
 import {
   DIMENSION_MODE_LABEL,
   SECTIONS,
+  migrateBusbar,
   newBusbar,
   sectionLabel,
   type Busbar,
@@ -152,10 +153,8 @@ export default function App() {
                 <div className="flat-val">{sectionLabel(bar.section)}</div>
               </div>
               <div>
-                <div className="muted">Gięć / skrętów</div>
-                <div className="flat-val">
-                  {analysis.bends.length} / {analysis.twists.length}
-                </div>
+                <div className="muted">Liczba gięć</div>
+                <div className="flat-val">{analysis.bends.length}</div>
               </div>
               <div>
                 <div className="muted">Wymiary ramion</div>
@@ -285,12 +284,9 @@ function SettingsTab({
           Wartości K i sprężynowania należy skalibrować na próbkach z tej maszyny. Zmiana dotyczy wszystkich projektów.
         </p>
         <div className="fields">
-          {num('radiusFlat', 'Promień – gięcie płaskie', 'mm', 0, 500)}
-          {num('radiusEdge', 'Promień – gięcie na kant', 'mm', 0, 1000)}
-          {num('kFlat', 'Współczynnik K – płaskie', '', 0, 1)}
-          {num('kEdge', 'Współczynnik K – na kant', '', 0, 1)}
-          {num('springbackFlatPct', 'Sprężynowanie – płaskie', '%', 0, 30)}
-          {num('springbackEdgePct', 'Sprężynowanie – na kant', '%', 0, 30)}
+          {num('radius', 'Promień gięcia (narzędzie)', 'mm', 0, 500)}
+          {num('k', 'Współczynnik K', '', 0, 1)}
+          {num('springbackPct', 'Sprężynowanie', '%', 0, 30)}
           {num('minLeg', 'Minimalne ramię', 'mm', 0, 500)}
           {num('maxLength', 'Długość handlowa szyny', 'mm', 100, 12000)}
         </div>
@@ -369,8 +365,8 @@ function TemplateIcon({ id }: { id: string }) {
     L: 'M10 50 H70 V10',
     Z: 'M5 50 H35 L60 20 H95',
     U: 'M15 10 V50 H85 V10',
-    edge: 'M10 50 H60 Q70 50 70 40 V15',
-    twist: 'M10 45 H40 M40 45 L55 35 M55 35 H70 V10',
+    Z90: 'M5 50 H40 V15 H95',
+    offsetL: 'M5 50 H25 L40 38 H70 V8',
   };
   return (
     <svg viewBox="0 0 100 60" className="tpl-icon">
@@ -455,7 +451,7 @@ function ProjectsModal({ currentId, onClose, onOpen }: { currentId: string; onCl
                 try {
                   const b = JSON.parse(await f.text()) as Busbar;
                   if (!b.steps || !b.section) throw new Error('format');
-                  onOpen(duplicateBar({ ...b, name: b.name.replace(/ \(kopia\)$/, '') }));
+                  onOpen(duplicateBar(migrateBusbar({ ...b, name: b.name.replace(/ \(kopia\)$/, '') }, useStore.getState().settings)));
                 } catch {
                   setMsg('Nieprawidłowy plik projektu.');
                 }
@@ -525,8 +521,8 @@ function PrintSheet({
         <div className="print-notes">
           <BendTable analysis={analysis} settings={settings} />
           <div>
-            Wymiary ramion: <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b> · K płaskie {settings.kFlat} · K kant{' '}
-            {settings.kEdge} · koniec A oznaczony na zielono
+            Wymiary ramion: <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b> · K {settings.k} · koniec A oznaczony na
+            zielono
           </div>
           {issues.length > 0 && (
             <div className="print-issues">

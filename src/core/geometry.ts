@@ -1,11 +1,11 @@
 import { Box3, Quaternion, Vector3 } from 'three';
 import type { Analysis, Issue } from './analyze';
-import { bendThickness, deg2rad } from './bending';
+import { deg2rad } from './bending';
 import type { Busbar, Direction } from './model';
 
 /**
  * Local frame of the bar cross-section.
- *  t – along the bar, n – thickness normal ("up" for flat bends), w – width direction ("right").
+ *  t – along the bar, n – thickness normal (bend direction "up"), w – width direction.
  * Start frame: t=+X, n=+Y, w=+Z.
  */
 export interface PathSample {
@@ -26,17 +26,8 @@ export interface BarPath {
   bbox: Box3;
 }
 
-function dirVector(f: { n: Vector3; w: Vector3 }, d: Direction): Vector3 {
-  switch (d) {
-    case 'up':
-      return f.n.clone();
-    case 'down':
-      return f.n.clone().negate();
-    case 'right':
-      return f.w.clone();
-    case 'left':
-      return f.w.clone().negate();
-  }
+export function dirVector(f: { n: Vector3 }, d: Direction): Vector3 {
+  return d === 'up' ? f.n.clone() : f.n.clone().negate();
 }
 
 export function buildPath(bar: Busbar, an: Analysis): BarPath {
@@ -63,10 +54,9 @@ export function buildPath(bar: Busbar, an: Analysis): BarPath {
     if (step.kind === 'straight') {
       const len = Math.max(0, an.netStraight[i] ?? 0);
       push(cur.p.clone().addScaledVector(cur.t, len), cur.t.clone(), cur.n.clone(), cur.w.clone(), i, len);
-    } else if (step.kind === 'bend') {
+    } else {
       if (step.angle > 0 && step.angle < 180) {
-        const tg = bendThickness(section, step.plane);
-        const rc = step.radius + tg / 2;
+        const rc = step.radius + section.thickness / 2;
         const dir = dirVector(cur, step.direction);
         const axis = new Vector3().crossVectors(cur.t, dir).normalize();
         const center = cur.p.clone().addScaledVector(dir, rc);
@@ -78,16 +68,6 @@ export function buildPath(bar: Busbar, an: Analysis): BarPath {
           const p = base.p.clone().sub(center).applyQuaternion(q).add(center);
           push(p, base.t.clone().applyQuaternion(q), base.n.clone().applyQuaternion(q), base.w.clone().applyQuaternion(q), i, rc * dTheta);
         }
-      }
-    } else {
-      const len = Math.max(0, step.length);
-      const base = cur;
-      const n = Math.max(6, Math.ceil(Math.abs(step.angle) / 6));
-      const dTheta = -deg2rad(step.angle) / n; // clockwise when looking along +t
-      for (let k = 1; k <= n; k++) {
-        const q = new Quaternion().setFromAxisAngle(base.t, dTheta * k);
-        const p = base.p.clone().addScaledVector(base.t, (len * k) / n);
-        push(p, base.t.clone(), base.n.clone().applyQuaternion(q), base.w.clone().applyQuaternion(q), i, len / n);
       }
     }
     stepRanges.push([startIdx, samples.length - 1]);

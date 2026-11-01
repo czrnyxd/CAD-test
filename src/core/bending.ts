@@ -1,17 +1,8 @@
-import type { DimensionMode, MachineSettings, Plane, Section } from './model';
+import type { DimensionMode, MachineSettings, Section } from './model';
 
 export const deg2rad = (deg: number) => (deg * Math.PI) / 180;
 
-/** Material thickness in the bending direction: T for flat bends, W for edge bends. */
-export function bendThickness(section: Section, plane: Plane): number {
-  return plane === 'flat' ? section.thickness : section.width;
-}
-
-export function kFactor(settings: MachineSettings, plane: Plane): number {
-  return plane === 'flat' ? settings.kFlat : settings.kEdge;
-}
-
-/** Bend allowance: arc length of the neutral axis. BA = A·(R + K·t) */
+/** Bend allowance: arc length of the neutral axis. BA = A·(R + K·T) */
 export function bendAllowance(angleDeg: number, radius: number, k: number, t: number): number {
   return deg2rad(angleDeg) * (radius + k * t);
 }
@@ -31,12 +22,11 @@ export function bendDeduction(angleDeg: number, radius: number, k: number, t: nu
 }
 
 /** Angle to set on the machine, compensating springback. */
-export function machineAngle(angleDeg: number, plane: Plane, settings: MachineSettings): number {
-  const pct = plane === 'flat' ? settings.springbackFlatPct : settings.springbackEdgePct;
-  return angleDeg * (1 + pct / 100);
+export function machineAngle(angleDeg: number, settings: MachineSettings): number {
+  return angleDeg * (1 + settings.springbackPct / 100);
 }
 
-/** Recommended minimum inner radius (rule of thumb for copper, conservative). */
-export function minRadius(section: Section, plane: Plane): number {
-  return plane === 'flat' ? section.thickness : section.width;
+/** Recommended minimum inner radius for a flat bend of copper (rule of thumb: R ≥ T). */
+export function minRadius(section: Section): number {
+  return section.thickness;
 }

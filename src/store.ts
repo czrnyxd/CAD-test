@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import {
-  DEFAULT_SETTINGS,
   SECTIONS,
+  migrateBusbar,
+  migrateSettings,
   newBusbar,
   newId,
   type Busbar,
@@ -41,7 +42,17 @@ function load<T>(key: string, fallback: T): T {
 }
 
 export function loadProjects(): Record<string, Busbar> {
-  return load<Record<string, Busbar>>(LS_PROJECTS, {});
+  const raw = load<Record<string, Busbar>>(LS_PROJECTS, {});
+  const settings = migrateSettings(load<Partial<MachineSettings>>(LS_SETTINGS, {}));
+  const out: Record<string, Busbar> = {};
+  for (const [id, b] of Object.entries(raw)) {
+    try {
+      out[id] = migrateBusbar(b, settings);
+    } catch {
+      /* skip broken entry */
+    }
+  }
+  return out;
 }
 
 function saveProject(bar: Busbar) {
@@ -58,7 +69,7 @@ export function deleteProject(id: string) {
 }
 
 function initialState(): { bar: Busbar; settings: MachineSettings } {
-  const settings = { ...DEFAULT_SETTINGS, ...load<Partial<MachineSettings>>(LS_SETTINGS, {}) };
+  const settings = migrateSettings(load<Partial<MachineSettings>>(LS_SETTINGS, {}));
   const projects = loadProjects();
   const currentId = lsGet(LS_CURRENT);
   const bar =

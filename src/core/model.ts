@@ -1,8 +1,7 @@
-// Parametric busbar model: a chain of steps (straight, bend, twist).
+// Parametric busbar model: a chain of straight legs and flat bends (bent through the thickness).
 // All lengths in mm, all angles in degrees.
 
-export type Plane = 'flat' | 'edge';
-export type Direction = 'up' | 'down' | 'left' | 'right';
+export type Direction = 'up' | 'down';
 export type DimensionMode = 'outside' | 'inside' | 'centerline';
 export type BendLineReference = 'start' | 'center' | 'end';
 
@@ -22,7 +21,6 @@ export interface StraightStep {
 export interface BendStep {
   id: string;
   kind: 'bend';
-  plane: Plane;
   /** Bend angle (how much the bar is bent), 0 < angle < 180. */
   angle: number;
   direction: Direction;
@@ -30,16 +28,7 @@ export interface BendStep {
   radius: number;
 }
 
-export interface TwistStep {
-  id: string;
-  kind: 'twist';
-  /** Twist angle around the bar axis, positive = clockwise looking along the bar. */
-  angle: number;
-  /** Length of the twist zone, mm. */
-  length: number;
-}
-
-export type Step = StraightStep | BendStep | TwistStep;
+export type Step = StraightStep | BendStep;
 
 export interface Busbar {
   id: string;
@@ -54,17 +43,12 @@ export interface Busbar {
 
 export interface MachineSettings {
   machineName: string;
-  /** Default inner radius for flat bends (through thickness). */
-  radiusFlat: number;
-  /** Default inner radius for edge bends (through width). */
-  radiusEdge: number;
-  /** Neutral axis factor for flat bends. */
-  kFlat: number;
-  /** Neutral axis factor for edge bends. */
-  kEdge: number;
+  /** Default inner bend radius (tool radius). */
+  radius: number;
+  /** Neutral axis factor. */
+  k: number;
   /** Springback correction in % of bend angle (machine setting = angle * (1 + pct/100)). */
-  springbackFlatPct: number;
-  springbackEdgePct: number;
+  springbackPct: number;
   /** Minimum straight (tangent) length next to a bend, required by the tooling. */
   minLeg: number;
   /** Which point of the bend zone is the position the operator sets on the stop. */
@@ -75,12 +59,9 @@ export interface MachineSettings {
 
 export const DEFAULT_SETTINGS: MachineSettings = {
   machineName: 'Giętarka 1',
-  radiusFlat: 10,
-  radiusEdge: 40,
-  kFlat: 0.4,
-  kEdge: 0.45,
-  springbackFlatPct: 2,
-  springbackEdgePct: 3,
+  radius: 10,
+  k: 0.4,
+  springbackPct: 2,
   minLeg: 30,
   bendLineReference: 'center',
   maxLength: 4000,
@@ -105,12 +86,8 @@ export function straight(length: number): StraightStep {
   return { id: newId(), kind: 'straight', length };
 }
 
-export function bend(plane: Plane, angle: number, direction: Direction, radius: number): BendStep {
-  return { id: newId(), kind: 'bend', plane, angle, direction, radius };
-}
-
-export function twist(angle: number, length: number): TwistStep {
-  return { id: newId(), kind: 'twist', angle, length };
+export function bend(angle: number, direction: Direction, radius: number): BendStep {
+  return { id: newId(), kind: 'bend', angle, direction, radius };
 }
 
 export function newBusbar(section: Section, steps: Step[], name = 'Nowa szyna'): Busbar {
@@ -129,20 +106,11 @@ export function newBusbar(section: Section, steps: Step[], name = 'Nowa szyna'):
 export const DIRECTION_LABEL: Record<Direction, string> = {
   up: 'w górę',
   down: 'w dół',
-  left: 'w lewo',
-  right: 'w prawo',
 };
 
 export const DIRECTION_ARROW: Record<Direction, string> = {
   up: '↑',
   down: '↓',
-  left: '←',
-  right: '→',
-};
-
-export const PLANE_LABEL: Record<Plane, string> = {
-  flat: 'płaskie',
-  edge: 'na kant',
 };
 
 export const DIMENSION_MODE_LABEL: Record<DimensionMode, string> = {
@@ -150,3 +118,38 @@ export const DIMENSION_MODE_LABEL: Record<DimensionMode, string> = {
   inside: 'po wewnętrznej',
   centerline: 'po osi',
 };
+
+/**
+ * Bring a project saved by an older version to the current model:
+ * edge bends become flat bends, twists are dropped and the neighbouring legs merged.
+ */
+export function migrateBusbar(raw: Busbar, settings: MachineSettings): Busbar {
+  const steps: Step[] = [];
+  for (const s of raw.steps as unknown as Record<string, unknown>[]) {
+    if (s.kind === 'straight') {
+      const prev = steps[steps.length - 1];
+      if (prev?.kind === 'straight') prev.length += Number(s.length) || 0;
+      else steps.push({ id: String(s.id ?? newId()), kind: 'straight', length: Number(s.length) || 0 });
+    } else if (s.kind === 'bend') {
+      const edge = s.plane === 'edge';
+      steps.push({
+        id: String(s.id ?? newId()),
+        kind: 'bend',
+        angle: Number(s.angle) || 90,
+        direction: s.direction === 'down' || s.direction === 'right' ? 'down' : 'up',
+        radius: edge ? settings.radius : Number(s.radius) || settings.radius,
+      });
+    }
+    // other kinds (e.g. twist) are no longer supported and are skipped
+  }
+  return { ...raw, steps };
+}
+
+/** Keep only known settings keys (older versions stored more). */
+export function migrateSettings(raw: Partial<MachineSettings>): MachineSettings {
+  const out = { ...DEFAULT_SETTINGS };
+  for (const k of Object.keys(DEFAULT_SETTINGS) as (keyof MachineSettings)[]) {
+    if (raw[k] !== undefined) (out as Record<string, unknown>)[k] = raw[k];
+  }
+  return out;
+}

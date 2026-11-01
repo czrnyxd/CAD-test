@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { fmt, type Analysis } from '../core/analyze';
-import { keyPoints, type BarPath } from '../core/geometry';
+import { dirVector, keyPoints, type BarPath } from '../core/geometry';
 import { DIRECTION_ARROW, type Busbar } from '../core/model';
 import { addLights, buildBarObject, fitOrtho, type BarObject, type ViewName } from './scene';
 
@@ -179,11 +179,6 @@ export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }
           const l = label(`G${info?.no ?? '?'} ${fmt(s.angle)}° ${DIRECTION_ARROW[s.direction]}`, i === selected ? 'lbl-sel' : 'lbl-bend');
           l.position.copy(midS.p);
           c.overlay.add(l);
-        } else {
-          const midS = path.samples[Math.round((a + b) / 2)];
-          const l = label(`skręt ${fmt(s.angle)}°`, i === selected ? 'lbl-sel' : 'lbl-bend');
-          l.position.copy(midS.p);
-          c.overlay.add(l);
         }
       });
       const start = label('A', 'lbl-start');
@@ -194,8 +189,7 @@ export function Viewer3D({ bar, path, analysis, selected, errorSteps, onSelect }
       const s = bar.steps[selected];
       if (s.kind === 'bend') {
         const f = path.samples[path.stepRanges[selected][0]];
-        const dir =
-          s.direction === 'up' ? f.n : s.direction === 'down' ? f.n.clone().negate() : s.direction === 'right' ? f.w : f.w.clone().negate();
+        const dir = dirVector(f, s.direction);
         const len = Math.max(60, bar.section.width * 2);
         const arrow = new THREE.ArrowHelper(dir.clone().normalize(), f.p, len, '#1677ff', len * 0.3, len * 0.18);
         arrow.traverse((o) => {

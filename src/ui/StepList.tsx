@@ -3,13 +3,12 @@ import { fmt, type Analysis, type Issue } from '../core/analyze';
 import { minRadius } from '../core/bending';
 import {
   DIRECTION_ARROW,
+  DIRECTION_LABEL,
   bend,
   straight,
-  twist,
   type Busbar,
   type Direction,
   type MachineSettings,
-  type Plane,
   type Step,
 } from '../core/model';
 import type { NumPadRequest } from './NumPad';
@@ -38,12 +37,9 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
   const patch = (i: number, p: Partial<Step>) =>
     updateSteps((steps) => steps.map((s, k) => (k === i ? ({ ...s, ...p } as Step) : s)));
 
-  /** Insert a new operation + straight after the selected straight (or at the end). */
-  const add = (kind: 'flat' | 'edge' | 'twist') => {
-    const op: Step =
-      kind === 'twist'
-        ? twist(90, Math.max(2 * bar.section.width, 60))
-        : bend(kind as Plane, 90, kind === 'flat' ? 'up' : 'right', kind === 'flat' ? settings.radiusFlat : settings.radiusEdge);
+  /** Insert a new bend + straight after the selected straight (or at the end). */
+  const add = () => {
+    const op: Step = bend(90, 'up', settings.radius);
     const leg = straight(150);
     let insertAt = bar.steps.length;
     if (selected !== null && bar.steps[selected]?.kind === 'straight') insertAt = selected + 1;
@@ -55,13 +51,13 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
     const s = bar.steps[i];
     updateSteps((steps) => {
       if (s.kind === 'straight') {
-        // Removing a leg also removes the operation before it (or after, for the first leg).
+        // Removing a leg also removes the bend before it (or after, for the first leg).
         if (steps.length <= 1) return steps;
         if (i > 0 && steps[i - 1].kind !== 'straight') return steps.filter((_, k) => k !== i && k !== i - 1);
         if (steps[i + 1] && steps[i + 1].kind !== 'straight') return steps.filter((_, k) => k !== i && k !== i + 1);
         return steps.filter((_, k) => k !== i);
       }
-      // Removing an operation merges the two neighbouring legs.
+      // Removing a bend merges the two neighbouring legs.
       const prev = steps[i - 1];
       const next = steps[i + 1];
       if (prev?.kind === 'straight' && next?.kind === 'straight') {
@@ -122,7 +118,7 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
           }
           if (s.kind === 'bend') {
             const info = analysis.bends.find((b) => b.stepIndex === i);
-            const dirs: Direction[] = s.plane === 'flat' ? ['up', 'down'] : ['left', 'right'];
+            const dirs: Direction[] = ['up', 'down'];
             return (
               <div key={s.id} {...common}>
                 <div className="step-head">
@@ -131,25 +127,6 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
                   <Del onClick={() => remove(i)} />
                 </div>
                 <div className="step-body">
-                  <div className="seg">
-                    {(['flat', 'edge'] as Plane[]).map((p) => (
-                      <button
-                        key={p}
-                        className={s.plane === p ? 'on' : ''}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (p === s.plane) return;
-                          patch(i, {
-                            plane: p,
-                            direction: p === 'flat' ? 'up' : 'right',
-                            radius: p === 'flat' ? settings.radiusFlat : settings.radiusEdge,
-                          });
-                        }}
-                      >
-                        {p === 'flat' ? 'Płaskie' : 'Na kant'}
-                      </button>
-                    ))}
-                  </div>
                   <div className="seg">
                     {dirs.map((d) => (
                       <button
@@ -160,7 +137,7 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
                           patch(i, { direction: d });
                         }}
                       >
-                        {DIRECTION_ARROW[d]}
+                        {DIRECTION_ARROW[d]} <span className="dir-text">{DIRECTION_LABEL[d]}</span>
                       </button>
                     ))}
                   </div>
@@ -190,7 +167,7 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
                         unit: 'mm',
                         min: 0,
                         max: 1000,
-                        quick: [minRadius(bar.section, s.plane), s.plane === 'flat' ? settings.radiusFlat : settings.radiusEdge],
+                        quick: [...new Set([minRadius(bar.section), settings.radius])],
                         onOk: (v) => patch(i, { radius: v }),
                       })
                     }
@@ -205,60 +182,12 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
               </div>
             );
           }
-          return (
-            <div key={s.id} {...common}>
-              <div className="step-head">
-                <span className="step-icon">⟲</span>
-                <span className="step-title">Skręt</span>
-                <Del onClick={() => remove(i)} />
-              </div>
-              <div className="step-body">
-                <Chip
-                  big
-                  label="Kąt"
-                  value={`${fmt(s.angle)}°`}
-                  onClick={() =>
-                    numpad({
-                      title: 'Skręt – kąt',
-                      value: s.angle,
-                      unit: '°',
-                      min: -180,
-                      max: 180,
-                      quick: [90, -90, 45, -45],
-                      onOk: (v) => patch(i, { angle: v }),
-                    })
-                  }
-                />
-                <Chip
-                  label="Strefa"
-                  value={`${fmt(s.length)} mm`}
-                  onClick={() =>
-                    numpad({
-                      title: 'Skręt – długość strefy skrętu',
-                      value: s.length,
-                      unit: 'mm',
-                      min: 1,
-                      max: 2000,
-                      quick: [2 * bar.section.width, 3 * bar.section.width],
-                      onOk: (v) => patch(i, { length: v }),
-                    })
-                  }
-                />
-              </div>
-              <IssueList issues={stepIssues} />
-            </div>
-          );
+          return null;
         })}
       </div>
       <div className="steps-add">
-        <button onClick={() => add('flat')}>
-          <b>+</b> Gięcie płaskie
-        </button>
-        <button onClick={() => add('edge')}>
-          <b>+</b> Gięcie na kant
-        </button>
-        <button onClick={() => add('twist')}>
-          <b>+</b> Skręt
+        <button onClick={add}>
+          <b>+</b> Dodaj gięcie
         </button>
       </div>
       <div className="steps-hint">

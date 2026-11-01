@@ -1,12 +1,5 @@
-import {
-  bendAllowance,
-  bendThickness,
-  kFactor,
-  machineAngle,
-  minRadius,
-  setback,
-} from './bending';
-import type { BendStep, Busbar, MachineSettings, Plane, Direction } from './model';
+import { bendAllowance, machineAngle, minRadius, setback } from './bending';
+import type { BendStep, Busbar, Direction, MachineSettings } from './model';
 
 export interface Issue {
   level: 'error' | 'warning';
@@ -17,17 +10,16 @@ export interface Issue {
 /** One step's place on the flat (developed) bar. */
 export interface FlatSegment {
   stepIndex: number;
-  kind: 'straight' | 'bend' | 'twist';
+  kind: 'straight' | 'bend';
   /** Position on the flat bar where this segment starts, mm. */
   flatStart: number;
-  /** Length on the flat bar, mm (net straight / bend allowance / twist zone). */
+  /** Length on the flat bar, mm (net straight / bend allowance). */
   flatLength: number;
 }
 
 export interface BendInfo {
   no: number;
   stepIndex: number;
-  plane: Plane;
   direction: Direction;
   angle: number;
   machineAngle: number;
@@ -41,20 +33,11 @@ export interface BendInfo {
   position: number;
 }
 
-export interface TwistInfo {
-  no: number;
-  stepIndex: number;
-  angle: number;
-  start: number;
-  end: number;
-}
-
 export interface Analysis {
   segments: FlatSegment[];
   /** Net straight (tangent-to-tangent) length for each step index; undefined for non-straight steps. */
   netStraight: (number | undefined)[];
   bends: BendInfo[];
-  twists: TwistInfo[];
   flatLength: number;
   issues: Issue[];
 }
@@ -66,7 +49,7 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
   const setbacks: number[] = steps.map((s) => {
     if (s.kind !== 'bend') return 0;
     if (!(s.angle > 0 && s.angle < 180)) return 0;
-    return setback(s.angle, s.radius, bendThickness(section, s.plane), dimensionMode);
+    return setback(s.angle, s.radius, section.thickness, dimensionMode);
   });
 
   // Validation of step order and bend parameters.
@@ -81,21 +64,12 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
       if (!(s.angle > 0 && s.angle < 180)) {
         issues.push({ level: 'error', stepIndex: i, message: 'Kąt gięcia musi być większy od 0° i mniejszy od 180°.' });
       }
-      const rMin = minRadius(section, s.plane);
+      const rMin = minRadius(section);
       if (s.radius < rMin) {
         issues.push({
           level: 'warning',
           stepIndex: i,
           message: `Promień R${fmt(s.radius)} mniejszy niż zalecany R${fmt(rMin)} – ryzyko pęknięcia.`,
-        });
-      }
-    }
-    if (s.kind === 'twist') {
-      if (s.length < 2 * section.width) {
-        issues.push({
-          level: 'warning',
-          stepIndex: i,
-          message: `Strefa skrętu krótsza niż 2×szerokość (${fmt(2 * section.width)} mm).`,
         });
       }
     }
@@ -134,19 +108,14 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
   // Flat layout.
   const segments: FlatSegment[] = [];
   const bends: BendInfo[] = [];
-  const twists: TwistInfo[] = [];
   let pos = 0;
   steps.forEach((s, i) => {
     let len = 0;
     if (s.kind === 'straight') {
       len = Math.max(0, netStraight[i] ?? 0);
-    } else if (s.kind === 'bend') {
-      const t = bendThickness(section, s.plane);
-      len = s.angle > 0 && s.angle < 180 ? bendAllowance(s.angle, s.radius, kFactor(settings, s.plane), t) : 0;
-      bends.push(makeBend(s, i, bends.length + 1, pos, len, setbacks[i], settings));
     } else {
-      len = Math.max(0, s.length);
-      twists.push({ no: twists.length + 1, stepIndex: i, angle: s.angle, start: pos, end: pos + len });
+      len = s.angle > 0 && s.angle < 180 ? bendAllowance(s.angle, s.radius, settings.k, section.thickness) : 0;
+      bends.push(makeBend(s, i, bends.length + 1, pos, len, setbacks[i], settings));
     }
     segments.push({ stepIndex: i, kind: s.kind, flatStart: pos, flatLength: len });
     pos += len;
@@ -160,7 +129,7 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
     });
   }
 
-  return { segments, netStraight, bends, twists, flatLength, issues };
+  return { segments, netStraight, bends, flatLength, issues };
 }
 
 function makeBend(
@@ -179,10 +148,9 @@ function makeBend(
   return {
     no,
     stepIndex,
-    plane: s.plane,
     direction: s.direction,
     angle: s.angle,
-    machineAngle: machineAngle(s.angle, s.plane, settings),
+    machineAngle: machineAngle(s.angle, settings),
     radius: s.radius,
     bendAllowance: ba,
     setback: sb,

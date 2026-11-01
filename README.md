@@ -26,7 +26,7 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
 
 ## Co działa
 
-- **Edytor kroków:** odcinek, gięcie płaskie, gięcie na kant, skręt. Wartości wpisuje się na dużej klawiaturze numerycznej z szybkimi kątami. Kierunek gięcia wybiera się strzałkami. Nowe gięcie wstawia się za zaznaczonym odcinkiem.
+- **Edytor kroków:** odcinki i gięcia płaskie (przez grubość szyny). Wartości wpisuje się na dużej klawiaturze numerycznej z szybkimi kątami. Kierunek gięcia wybiera się przyciskami ↑ w górę / ↓ w dół. Nowe gięcie wstawia się za zaznaczonym odcinkiem.
 - **Model 3D:**
   - obrót jednym palcem, zoom i przesuwanie dwoma,
   - widoki ISO/Przód/Góra/Bok i automatyczne dopasowanie kadru,
@@ -38,11 +38,11 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
   - pozycje linii gięć (początek, środek lub koniec łuku),
   - nastawa kąta z korektą sprężynowania,
   - wymiarowanie po zewnętrznej, wewnętrznej lub po osi.
-- **Walidacje:** za krótkie odcinki, minimalne ramię, minimalny promień, strefa skrętu, długość handlowa, kolizja szyny z samą sobą.
-- **Rozwinięcie:** rysunek z wymiarami łańcuchowymi i od bazy, strefy gięć i skrętów, tabela gięć dla operatora.
+- **Walidacje:** za krótkie odcinki, minimalne ramię, minimalny promień, długość handlowa, kolizja szyny z samą sobą.
+- **Rozwinięcie:** rysunek z wymiarami łańcuchowymi i od bazy, strefy gięć, tabela gięć dla operatora.
 - **Wydruk A4 / PDF:** nagłówek zlecenia, widok 3D, tabela gięć, rozwinięcie.
 - **Projekty:** autozapis w przeglądarce (localStorage), lista projektów, kopiowanie, eksport i import JSON, cofnij/ponów.
-- **Ustawienia maszyny:** promienie, K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
+- **Ustawienia maszyny:** promień narzędzia, K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
 
 ## Struktura
 
@@ -56,4 +56,5 @@ src/store.ts   stan aplikacji, historia cofnij/ponów, zapis lokalny
 
 - Współczynniki K i sprężynowania to wartości przykładowe. Trzeba je skalibrować na próbkach z maszyny.
 - Brak otworów, eksportu DXF, kreatora kalibracji i trybu offline (service worker). To kolejne etapy z planu.
-- Kierunki „w górę/w dół/w lewo/w prawo” są liczone względem szyny w chwili gięcia. Do ustalenia z operatorem, jak to przełożyć na ułożenie szyny w maszynie.
+- Kierunki „w górę/w dół” są liczone względem szyny w chwili gięcia. Do ustalenia z operatorem, jak to przełożyć na ułożenie szyny w maszynie.
+- Giętarka robi tylko gięcia płaskie, więc gięć na kant i skrętów celowo nie ma. Starsze projekty z nimi są przy wczytaniu konwertowane: gięcie na kant staje się płaskim, a skręt jest usuwany.

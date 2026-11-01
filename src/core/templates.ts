@@ -1,4 +1,4 @@
-import { bend, straight, twist, type MachineSettings, type Step } from './model';
+import { bend, straight, type MachineSettings, type Step } from './model';
 
 export interface Template {
   id: string;
@@ -18,54 +18,38 @@ export const TEMPLATES: Template[] = [
     id: 'L',
     name: 'L',
     description: 'Jedno gięcie 90°',
-    build: (s) => [straight(200), bend('flat', 90, 'up', s.radiusFlat), straight(150)],
+    build: (s) => [straight(200), bend(90, 'up', s.radius), straight(150)],
   },
   {
     id: 'Z',
     name: 'Z (odsadzenie)',
     description: 'Dwa gięcia 45° w przeciwne strony',
-    build: (s) => [
-      straight(150),
-      bend('flat', 45, 'up', s.radiusFlat),
-      straight(80),
-      bend('flat', 45, 'down', s.radiusFlat),
-      straight(150),
-    ],
+    build: (s) => [straight(150), bend(45, 'up', s.radius), straight(80), bend(45, 'down', s.radius), straight(150)],
   },
   {
     id: 'U',
     name: 'U',
     description: 'Dwa gięcia 90° w tę samą stronę',
-    build: (s) => [
-      straight(150),
-      bend('flat', 90, 'up', s.radiusFlat),
-      straight(200),
-      bend('flat', 90, 'up', s.radiusFlat),
-      straight(150),
-    ],
+    build: (s) => [straight(150), bend(90, 'up', s.radius), straight(200), bend(90, 'up', s.radius), straight(150)],
   },
   {
-    id: 'edge',
-    name: 'Kant 90°',
-    description: 'Gięcie na kant + gięcie płaskie',
+    id: 'Z90',
+    name: 'Z 90°',
+    description: 'Dwa gięcia 90° w przeciwne strony',
+    build: (s) => [straight(150), bend(90, 'up', s.radius), straight(120), bend(90, 'down', s.radius), straight(150)],
+  },
+  {
+    id: 'offsetL',
+    name: 'Odsadzenie + L',
+    description: 'Odsadzenie 30° i gięcie 90°',
     build: (s) => [
-      straight(250),
-      bend('edge', 90, 'right', s.radiusEdge),
-      straight(200),
-      bend('flat', 90, 'down', s.radiusFlat),
       straight(120),
-    ],
-  },
-  {
-    id: 'twist',
-    name: 'Skręt + L',
-    description: 'Skręt 90° i gięcie',
-    build: (s) => [
+      bend(30, 'up', s.radius),
+      straight(60),
+      bend(30, 'down', s.radius),
       straight(150),
-      twist(90, 100),
-      straight(100),
-      bend('flat', 90, 'up', s.radiusFlat),
-      straight(150),
+      bend(90, 'up', s.radius),
+      straight(120),
     ],
   },
 ];

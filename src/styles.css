@@ -105,7 +105,6 @@ button.accent.on { background: #e8590c; border-color: #e8590c; }
 }
 .step-straight { border-left: 8px solid #b8c2cc; }
 .step-bend { border-left: 8px solid var(--copper); background: #fffaf5; }
-.step-twist { border-left: 8px solid #7a5cc2; background: #f8f5ff; }
 .step.selected { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(22,119,255,.2); }
 .step.error { border-color: var(--error); }
 .step.warning:not(.selected) { border-color: var(--warn); }
@@ -125,10 +124,11 @@ button.accent.on { background: #e8590c; border-color: #e8590c; }
 .seg { display: inline-flex; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
 .seg button { border: none; border-radius: 0; min-height: 48px; }
 .seg button + button { border-left: 1px solid var(--line); }
-.seg button.dir { font-size: 24px; min-width: 52px; padding: 0; font-weight: 700; }
-.steps-add { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding: 10px; border-top: 1px solid var(--line); }
-.steps-add button { min-height: 64px; font-weight: 600; font-size: 15px; line-height: 1.15; padding: 4px 6px; }
-.steps-add b { font-size: 22px; display: block; color: var(--accent); }
+.seg button.dir { font-size: 22px; min-width: 52px; padding: 0 12px; font-weight: 700; }
+.dir-text { font-size: 14px; font-weight: 600; }
+.steps-add { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 10px; border-top: 1px solid var(--line); }
+.steps-add button { min-height: 64px; font-weight: 700; font-size: 18px; line-height: 1.15; padding: 4px 6px; }
+.steps-add b { font-size: 24px; color: var(--accent); margin-right: 6px; }
 .steps-hint { font-size: 12px; color: var(--muted); padding: 0 12px 10px; }
 
 /* status bar */
@@ -161,7 +161,6 @@ button.accent.on { background: #e8590c; border-color: #e8590c; }
 .bend-table th { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 .bend-table td.big { font-size: 22px; font-weight: 800; }
 .bend-table .num-badge { font-weight: 800; color: #fff; background: #c0392b; text-align: center; border-radius: 8px; width: 44px; }
-.bend-table .num-badge.twist { background: #7a5cc2; }
 .bend-table .arrow { font-size: 22px; font-weight: 800; }
 .bend-table tfoot td { border: none; }
 
@@ -273,8 +272,7 @@ button.danger { background: var(--error); color: #fff; border-color: var(--error
   .seg button.dir { min-width: 44px; font-size: 20px; }
   .chip-big .chip-value { font-size: 18px; }
   .steps-add { padding: 6px; gap: 4px; }
-  .steps-add button { min-height: 50px; font-size: 13px; }
-  .steps-add b { font-size: 16px; display: inline; }
+  .steps-add button { min-height: 50px; font-size: 16px; }
   .steps-hint { display: none; }
   .statusbar { gap: 10px; padding: 6px 10px; font-size: 13px; }
   .statusbar b { font-size: 16px; }

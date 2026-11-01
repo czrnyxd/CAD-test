@@ -26,6 +26,9 @@ Szyna gięta jest w istocie **łańcuchem**: prosty odcinek, gięcie, prosty odc
 
 ### Rodzaje operacji
 
+> **Aktualizacja:** giętarka na stanowisku wykonuje tylko **gięcia płaskie**. Gięcia na kant i skręty zostały usunięte z aplikacji. Poniższa tabela zostaje jako ewentualna rozbudowa przy innej maszynie.
+
+
 | Operacja | Opis | Parametry |
 |---|---|---|
 | **Odcinek prosty** | prosta część szyny | długość [mm] |
