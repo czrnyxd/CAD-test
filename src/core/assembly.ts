@@ -94,9 +94,9 @@ export function buildAssembly(project: Busbar, settings: MachineSettings): Assem
   const issues: Issue[] = [
     ...an1.issues.map((i) => ({ ...i, message: `Szyna 1: ${i.message}` })),
     ...collisionIssues(bar1, path1).map((i) => ({ ...i, message: `Szyna 1: ${i.message}` })),
-    // Leg/hole problems of bar 2 mirror bar 1 – report only those that differ.
+    // Most problems of bar 2 mirror bar 1 – report only those that bar 1 does not have.
     ...an2.issues
-      .filter((i2) => !an1.issues.some((i1) => i1.stepIndex === i2.stepIndex && i1.level === i2.level && sameKind(i1, i2)))
+      .filter((i2) => !an1.issues.some((i1) => i1.code === i2.code && i1.stepIndex === i2.stepIndex && i1.holeId === i2.holeId))
       .map((i) => ({ ...i, message: `Szyna 2: ${i.message}` })),
   ];
 
@@ -110,8 +110,4 @@ export function buildAssembly(project: Busbar, settings: MachineSettings): Assem
     issues,
     bbox,
   };
-}
-
-function sameKind(a: Issue, b: Issue): boolean {
-  return a.message.split(' ')[0] === b.message.split(' ')[0];
 }

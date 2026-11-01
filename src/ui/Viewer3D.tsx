@@ -75,8 +75,6 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Prop
     const grid = new THREE.GridHelper(4000, 80, '#b8c2cc', '#d3d9df');
     grid.position.y = -0.01;
     scene.add(grid);
-    const axes = new THREE.AxesHelper(60);
-    scene.add(axes);
     const overlay = new THREE.Group();
     const measureGroup = new THREE.Group();
     scene.add(overlay, measureGroup);
@@ -191,7 +189,10 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Prop
         } else if (s.kind === 'bend') {
           const midS = path.samples[Math.round((a + b) / 2)];
           const info = analysis.bends.find((x) => x.stepIndex === i);
-          const l = label(`G${info?.no ?? '?'} ${fmt(s.angle)}° ${DIRECTION_ARROW[s.direction]}`, i === selected ? 'lbl-sel' : 'lbl-bend');
+          const l = label(
+            `G${info?.no ?? '?'} ${fmt(s.angle)}° ${DIRECTION_ARROW[s.direction]}`,
+            i === selected ? 'lbl-sel' : 'lbl-bend',
+          );
           l.position.copy(midS.p);
           c.overlay.add(l);
         }
@@ -200,8 +201,23 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Prop
       for (const part of assembly.parts) {
         const s0 = part.path.samples[0];
         const start = label(double ? `A${part.index}` : 'A', 'lbl-start');
-        start.position.copy(s0.p).addScaledVector(s0.t, -bar.section.width * 0.6).add(new THREE.Vector3(0, part.offset, 0));
+        start.position
+          .copy(s0.p)
+          .addScaledVector(s0.t, -bar.section.width * 0.6)
+          .add(new THREE.Vector3(0, part.offset, 0));
         c.overlay.add(start);
+      }
+      // Hole numbers matching the hole table (labels are drawn on top, one per hole).
+      for (const h of part1.analysis.holes) {
+        const f = path.samples[path.stepRanges[h.stepIndex][0]];
+        const l = label(`O${h.no}`, 'lbl-hole');
+        l.position
+          .copy(f.p)
+          .addScaledVector(f.t, h.posOnStraight)
+          .addScaledVector(f.w, h.offset)
+          .addScaledVector(f.n, bar.section.thickness / 2);
+        l.center.set(-0.15, 1.2);
+        c.overlay.add(l);
       }
     }
     if (selected !== null && bar.steps[selected]?.kind === 'bend') {
@@ -238,12 +254,19 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Prop
     if (measure) {
       const size = Math.max(2, bar.section.thickness * 0.35);
       const sg = new THREE.SphereGeometry(size, 10, 8);
-      const kp = new THREE.InstancedMesh(sg, new THREE.MeshBasicMaterial({ color: '#1677ff', transparent: true, opacity: 0.45, depthTest: false }), keyPts.current.length);
+      const kp = new THREE.InstancedMesh(
+        sg,
+        new THREE.MeshBasicMaterial({ color: '#1677ff', transparent: true, opacity: 0.45, depthTest: false }),
+        keyPts.current.length,
+      );
       keyPts.current.forEach((p, i) => kp.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p.x, p.y, p.z)));
       kp.renderOrder = 10;
       c.measureGroup.add(kp);
       for (const p of points) {
-        const m = new THREE.Mesh(new THREE.SphereGeometry(size * 1.6, 14, 10), new THREE.MeshBasicMaterial({ color: '#e8590c', depthTest: false }));
+        const m = new THREE.Mesh(
+          new THREE.SphereGeometry(size * 1.6, 14, 10),
+          new THREE.MeshBasicMaterial({ color: '#e8590c', depthTest: false }),
+        );
         m.position.copy(p);
         m.renderOrder = 11;
         c.measureGroup.add(m);

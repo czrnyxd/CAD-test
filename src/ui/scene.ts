@@ -49,10 +49,111 @@ export function buildBarObject(
     colors.push(c.r, c.g, c.b);
   };
 
+  /** Push a triangle, fixing its winding so that it faces along `facing`. */
+  const pushTri = (
+    a: THREE.Vector3,
+    b: THREE.Vector3,
+    c: THREE.Vector3,
+    na: THREE.Vector3,
+    nb: THREE.Vector3,
+    nc: THREE.Vector3,
+    facing: THREE.Vector3,
+    col: THREE.Color,
+    step: number,
+  ) => {
+    const cross = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+    if (cross.dot(facing) < 0) [b, c, nb, nc] = [c, b, nc, nb];
+    pushV(a, na, col);
+    pushV(b, nb, col);
+    pushV(c, nc, col);
+    triangleStep.push(step);
+  };
+
+  // Holes that lie fully inside a straight segment are cut through the solid; others (invalid
+  // positions, reported as errors) are only marked with a decal.
+  const cutHoles = new Map<number, HoleInfo[]>();
+  const decalHoles: HoleInfo[] = [];
+  for (const h of opts.holes ?? []) {
+    const range = path.stepRanges[h.stepIndex];
+    const len = range ? path.samples[range[1]].s - path.samples[range[0]].s : 0;
+    const fits =
+      range &&
+      range[1] - range[0] === 1 &&
+      h.diameter > 0 &&
+      h.posOnStraight - h.length / 2 > 0.01 &&
+      h.posOnStraight + h.length / 2 < len - 0.01 &&
+      Math.abs(h.offset) + h.diameter / 2 < W / 2 - 0.01;
+    if (fits) cutHoles.set(h.stepIndex, [...(cutHoles.get(h.stepIndex) ?? []), h]);
+    else decalHoles.push(h);
+  }
+  const holeEdgePts: number[] = [];
+
+  /** Top (+1) or bottom (−1) face of a straight strip with holes cut out, plus the hole walls. */
+  const cutFace = (k: number, side: 1 | -1, holes: HoleInfo[], col: THREE.Color, step: number) => {
+    const f = path.samples[k - 1];
+    const len = path.samples[k].s - f.s;
+    const to3 = (x: number, y: number, z: number) =>
+      f.p.clone().addScaledVector(f.t, x).addScaledVector(f.w, y).addScaledVector(f.n, z);
+    const nrm = side === 1 ? f.n.clone() : f.n.clone().negate();
+    const contour = [
+      new THREE.Vector2(0, -W / 2),
+      new THREE.Vector2(len, -W / 2),
+      new THREE.Vector2(len, W / 2),
+      new THREE.Vector2(0, W / 2),
+    ];
+    const outlines = holes.map((h) => holeOutline(h.posOnStraight, h.offset, h.length, h.diameter));
+    // Contour counter-clockwise, holes clockwise; the same arrays index the result.
+    const holePaths = outlines.map((o) => [...o].reverse());
+    const tris = THREE.ShapeUtils.triangulateShape(contour, holePaths);
+    const all = [...contour, ...holePaths.flat()];
+    const z = (side * T) / 2;
+    for (const [i0, i1, i2] of tris) {
+      const a = to3(all[i0].x, all[i0].y, z);
+      const b = to3(all[i1].x, all[i1].y, z);
+      const c = to3(all[i2].x, all[i2].y, z);
+      pushTri(a, b, c, nrm, nrm, nrm, nrm, col, step);
+    }
+    if (side !== 1) return;
+    // Walls (once per hole, through the whole thickness) and outline edges on both faces.
+    holes.forEach((h, hi) => {
+      const o = outlines[hi];
+      const half = Math.max(0, h.length / 2 - h.diameter / 2);
+      const wallNormal = (p: THREE.Vector2) => {
+        const ax = Math.min(Math.max(p.x, h.posOnStraight - half), h.posOnStraight + half);
+        const dx = ax - p.x;
+        const dy = h.offset - p.y;
+        const l = Math.hypot(dx, dy) || 1;
+        return f.t
+          .clone()
+          .multiplyScalar(dx / l)
+          .addScaledVector(f.w, dy / l);
+      };
+      for (let i = 0; i < o.length; i++) {
+        const p = o[i];
+        const q = o[(i + 1) % o.length];
+        const pt = to3(p.x, p.y, T / 2);
+        const qt = to3(q.x, q.y, T / 2);
+        const pb = to3(p.x, p.y, -T / 2);
+        const qb = to3(q.x, q.y, -T / 2);
+        const np = wallNormal(p);
+        const nq = wallNormal(q);
+        const facing = np.clone().add(nq);
+        pushTri(pt, qt, qb, np, nq, nq, facing, col, step);
+        pushTri(pt, qb, pb, np, nq, np, facing, col, step);
+        holeEdgePts.push(pt.x, pt.y, pt.z, qt.x, qt.y, qt.z, pb.x, pb.y, pb.z, qb.x, qb.y, qb.z);
+      }
+    });
+  };
+
   for (let k = 1; k < path.samples.length; k++) {
     const step = path.samples[k].stepIndex;
     const col = colorFor(step);
+    const holesHere = cutHoles.get(step);
     for (const [a, b, nf] of faces) {
+      if (holesHere && (a === 0 || a === 2)) {
+        cutFace(k, a === 0 ? 1 : -1, holesHere, col, step);
+        continue;
+      }
       const p0 = rings[k - 1][a];
       const p1 = rings[k - 1][b];
       const p2 = rings[k][b];
@@ -119,6 +220,7 @@ export function buildBarObject(
       edgePts.push(a.x, a.y, a.z, b.x, b.y, b.z);
     }
   }
+  edgePts.push(...holeEdgePts);
   const edgeGeom = new THREE.BufferGeometry();
   edgeGeom.setAttribute('position', new THREE.Float32BufferAttribute(edgePts, 3));
   const edgeMat = new THREE.LineBasicMaterial({ color: '#3b2210' });
@@ -127,7 +229,7 @@ export function buildBarObject(
   const group = new THREE.Group();
   group.add(mesh, edges);
 
-  // Holes: dark decals on both faces of the bar.
+  // Holes that could not be cut (invalid position): dark decals on both faces of the bar.
   const holeMat = new THREE.MeshBasicMaterial({
     color: HOLE_COLOR,
     side: THREE.DoubleSide,
@@ -136,7 +238,7 @@ export function buildBarObject(
     polygonOffsetUnits: -2,
   });
   const holeGeoms: THREE.BufferGeometry[] = [];
-  for (const h of opts.holes ?? []) {
+  for (const h of decalHoles) {
     const range = path.stepRanges[h.stepIndex];
     if (!range) continue;
     const f = path.samples[range[0]];
@@ -144,7 +246,11 @@ export function buildBarObject(
     holeGeoms.push(g);
     for (const sign of [1, -1]) {
       const m = new THREE.Mesh(g, holeMat);
-      const pos = f.p.clone().addScaledVector(f.t, h.posOnStraight).addScaledVector(f.w, h.offset).addScaledVector(f.n, sign * (T / 2 + 0.05));
+      const pos = f.p
+        .clone()
+        .addScaledVector(f.t, h.posOnStraight)
+        .addScaledVector(f.w, h.offset)
+        .addScaledVector(f.n, sign * (T / 2 + 0.05));
       m.matrixAutoUpdate = false;
       m.matrix.makeBasis(f.t, f.w, f.n).setPosition(pos);
       m.userData.stepIndex = h.stepIndex;
@@ -165,6 +271,33 @@ export function buildBarObject(
       holeGeoms.forEach((g) => g.dispose());
     },
   };
+}
+
+/**
+ * Outline of a round hole or slot in strip coordinates (x along the bar, y across),
+ * counter-clockwise, without the closing point.
+ */
+export function holeOutline(cx: number, cy: number, length: number, diameter: number, segments = 40): THREE.Vector2[] {
+  const r = diameter / 2;
+  const half = Math.max(0, length / 2 - r);
+  const pts: THREE.Vector2[] = [];
+  if (half <= 0) {
+    for (let i = 0; i < segments; i++) {
+      const a = (i / segments) * Math.PI * 2;
+      pts.push(new THREE.Vector2(cx + r * Math.cos(a), cy + r * Math.sin(a)));
+    }
+    return pts;
+  }
+  const n = Math.max(8, Math.round(segments / 2));
+  for (let i = 0; i <= n; i++) {
+    const a = -Math.PI / 2 + (i / n) * Math.PI; // right cap
+    pts.push(new THREE.Vector2(cx + half + r * Math.cos(a), cy + r * Math.sin(a)));
+  }
+  for (let i = 0; i <= n; i++) {
+    const a = Math.PI / 2 + (i / n) * Math.PI; // left cap
+    pts.push(new THREE.Vector2(cx - half + r * Math.cos(a), cy + r * Math.sin(a)));
+  }
+  return pts;
 }
 
 /** Round hole (length ≤ diameter) or slot, centred at origin, length along X. */

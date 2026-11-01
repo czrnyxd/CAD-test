@@ -147,9 +147,9 @@ export default function App() {
           <div className="flat-tab">
             {double && (
               <div className="card double-note">
-                <b>Podwójna szyna.</b> Każdą szynę tnij i gnij według jej własnej tabeli. W gięciach szyna wewnętrzna ma
-                promień narzędzia, a zewnętrzna większy o grubość i odstęp, dzięki czemu obie do siebie przylegają, a
-                otwory wypadają na sobie.
+                <b>Podwójna szyna.</b> Każdą szynę tnij i gnij według jej własnej tabeli. W gięciach szyna wewnętrzna ma promień
+                narzędzia, a zewnętrzna większy o grubość i odstęp, dzięki czemu obie do siebie przylegają, a otwory wypadają na
+                sobie.
               </div>
             )}
             {assembly.parts.map((part) => (
@@ -157,13 +157,14 @@ export default function App() {
             ))}
           </div>
         )}
-        {tab === 'settings' && <SettingsTab bar={bar} settings={settings} update={update} setSettings={setSettings} numpad={setNp} />}
+        {tab === 'settings' && (
+          <SettingsTab bar={bar} settings={settings} update={update} setSettings={setSettings} numpad={setNp} />
+        )}
       </main>
 
       <footer className={`statusbar ${errors ? 'has-errors' : warnings ? 'has-warnings' : ''}`}>
         <span>
-          Długość cięcia:{' '}
-          <b>{assembly.parts.map((p) => `${fmt(p.analysis.flatLength)}`).join(' / ')} mm</b>
+          Długość cięcia: <b>{assembly.parts.map((p) => `${fmt(p.analysis.flatLength)}`).join(' / ')} mm</b>
         </span>
         <span>{sectionLabel(bar.section)}</span>
         <span>Wymiary {DIMENSION_MODE_LABEL[bar.dimensionMode]}</span>
@@ -225,7 +226,14 @@ function SettingsTab({
     <button
       className="field"
       onClick={() =>
-        numpad({ title, unit, min, max, value: settings[key] as number, onOk: (v) => setSettings({ [key]: v } as Partial<MachineSettings>) })
+        numpad({
+          title,
+          unit,
+          min,
+          max,
+          value: settings[key] as number,
+          onOk: (v) => setSettings({ [key]: v } as Partial<MachineSettings>),
+        })
       }
     >
       <span className="field-label">{title}</span>
@@ -246,7 +254,14 @@ function SettingsTab({
           <button
             className="field"
             onClick={() =>
-              numpad({ title: 'Ilość sztuk', unit: 'szt.', min: 1, max: 10000, value: bar.quantity, onOk: (v) => update((b) => ({ ...b, quantity: Math.round(v) })) })
+              numpad({
+                title: 'Ilość sztuk',
+                unit: 'szt.',
+                min: 1,
+                max: 10000,
+                value: bar.quantity,
+                onOk: (v) => update((b) => ({ ...b, quantity: Math.round(v) })),
+              })
             }
           >
             <span className="field-label">Ilość</span>
@@ -257,7 +272,11 @@ function SettingsTab({
           <span className="field-label">Długości odcinków wymiarowane</span>
           <div className="seg">
             {(['outside', 'inside', 'centerline'] as DimensionMode[]).map((m) => (
-              <button key={m} className={bar.dimensionMode === m ? 'on' : ''} onClick={() => update((b) => ({ ...b, dimensionMode: m }))}>
+              <button
+                key={m}
+                className={bar.dimensionMode === m ? 'on' : ''}
+                onClick={() => update((b) => ({ ...b, dimensionMode: m }))}
+              >
                 {DIMENSION_MODE_LABEL[m]}
               </button>
             ))}
@@ -286,7 +305,11 @@ function SettingsTab({
                 ['end', 'koniec łuku'],
               ] as const
             ).map(([k, l]) => (
-              <button key={k} className={settings.bendLineReference === k ? 'on' : ''} onClick={() => setSettings({ bendLineReference: k })}>
+              <button
+                key={k}
+                className={settings.bendLineReference === k ? 'on' : ''}
+                onClick={() => setSettings({ bendLineReference: k })}
+              >
                 {l}
               </button>
             ))}
@@ -372,7 +395,12 @@ function ProjectsModal({ currentId, onClose, onOpen }: { currentId: string; onCl
     <div className="modal-backdrop" onPointerDown={onClose}>
       <div className="modal" onPointerDown={(e) => e.stopPropagation()}>
         <h2>Projekty</h2>
-        <input className="search" placeholder="Szukaj po nazwie lub nr zlecenia…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input
+          className="search"
+          placeholder="Szukaj po nazwie lub nr zlecenia…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
         <div className="project-list">
           {filtered.map((p) => (
             <div key={p.id} className={`project ${p.id === currentId ? 'current' : ''}`}>
@@ -437,7 +465,9 @@ function ProjectsModal({ currentId, onClose, onOpen }: { currentId: string; onCl
                 try {
                   const b = JSON.parse(await f.text()) as Busbar;
                   if (!b.steps || !b.section) throw new Error('format');
-                  onOpen(duplicateBar(migrateBusbar({ ...b, name: b.name.replace(/ \(kopia\)$/, '') }, useStore.getState().settings)));
+                  onOpen(
+                    duplicateBar(migrateBusbar({ ...b, name: b.name.replace(/ \(kopia\)$/, '') }, useStore.getState().settings)),
+                  );
                 } catch {
                   setMsg('Nieprawidłowy plik projektu.');
                 }
@@ -562,8 +592,7 @@ function PrintSheet({
             </>
           )}
           <div>
-            Wymiary ramion: <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b> · K {settings.k} · koniec A oznaczony na
-            zielono
+            Wymiary ramion: <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b> · K {settings.k} · koniec A oznaczony na zielono
           </div>
           {double && (
             <div>

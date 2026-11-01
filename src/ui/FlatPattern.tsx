@@ -30,7 +30,10 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
 
   // Positions for chain dimensions: ends and bend lines.
   const marks = [0, ...bends.map((b) => b.position), L].sort((a, b) => a - b);
-  const chain = marks.slice(1).map((m, k) => [marks[k], m] as const).filter(([a, b]) => b - a > 0.05);
+  const chain = marks
+    .slice(1)
+    .map((m, k) => [marks[k], m] as const)
+    .filter(([a, b]) => b - a > 0.05);
 
   const baseRows = bends.length + holes.length;
   const yBase0 = yBarBot + 34;
@@ -60,7 +63,15 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
             fill="#f0a35e"
             opacity="0.55"
           />
-          <line x1={X(b.position)} y1={yBarTop - 6} x2={X(b.position)} y2={yBarBot + 6} stroke="#c0392b" strokeWidth="1.6" strokeDasharray="6 4" />
+          <line
+            x1={X(b.position)}
+            y1={yBarTop - 6}
+            x2={X(b.position)}
+            y2={yBarBot + 6}
+            stroke="#c0392b"
+            strokeWidth="1.6"
+            strokeDasharray="6 4"
+          />
           <circle cx={X(b.position)} cy={40} r={11} fill="#c0392b" />
           <text x={X(b.position)} y={44.5} textAnchor="middle" className="t-badge">
             {b.no}
@@ -86,7 +97,16 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
         return (
           <g key={`h${h.no}`}>
             {rx > ry ? (
-              <rect x={cx - rx} y={cy - ry} width={2 * rx} height={2 * ry} rx={ry} fill="#fff" stroke="#24150a" strokeWidth="1.4" />
+              <rect
+                x={cx - rx}
+                y={cy - ry}
+                width={2 * rx}
+                height={2 * ry}
+                rx={ry}
+                fill="#fff"
+                stroke="#24150a"
+                strokeWidth="1.4"
+              />
             ) : (
               <circle cx={cx} cy={cy} r={r} fill="#fff" stroke="#24150a" strokeWidth="1.4" />
             )}
@@ -111,7 +131,14 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
 
       {/* baseline dimensions from start */}
       {bends.map((b, k) => (
-        <Dim key={`d${k}`} x1={X(0)} x2={X(b.position)} y={yBase0 + k * rowH} yFrom={yBarBot} text={`${fmt(b.position)}  (${b.no})`} />
+        <Dim
+          key={`d${k}`}
+          x1={X(0)}
+          x2={X(b.position)}
+          y={yBase0 + k * rowH}
+          yFrom={yBarBot}
+          text={`${fmt(b.position)}  (${b.no})`}
+        />
       ))}
 
       {/* hole positions from start */}
@@ -131,7 +158,8 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
       <Dim x1={X(0)} x2={X(L)} y={yTotal} yFrom={yBarBot} text={`L = ${fmt(L)} mm`} bold />
 
       <text x={width - mR} y={height - 6} textAnchor="end" className="t-small">
-        Linie gięcia: {REF_LABEL[settings.bendLineReference]} · wymiary w mm · rysunek poglądowy, nie w skali
+        Widok na górną stronę szyny (↑ = gięcie w stronę patrzącego) · linie gięcia: {REF_LABEL[settings.bendLineReference]} ·
+        wymiary w mm · rysunek nie w skali
       </text>
     </svg>
   );
@@ -158,7 +186,15 @@ function Dim({
   return (
     <g className={hole ? 'dim dim-hole' : 'dim'}>
       <line x1={x1} y1={y + (y > yFrom ? -14 : 14)} x2={x1} y2={y + (y > yFrom ? 5 : -5)} stroke="#777" strokeWidth="0.8" />
-      <line x1={x2} y1={yFrom} x2={x2} y2={y + (y > yFrom ? 5 : -5)} stroke="#777" strokeWidth="0.8" strokeDasharray={hole ? '3 3' : undefined} />
+      <line
+        x1={x2}
+        y1={yFrom}
+        x2={x2}
+        y2={y + (y > yFrom ? 5 : -5)}
+        stroke="#777"
+        strokeWidth="0.8"
+        strokeDasharray={hole ? '3 3' : undefined}
+      />
       <line x1={x1} y1={y} x2={x2} y2={y} stroke="#222" strokeWidth="1" markerStart="url(#arr)" markerEnd="url(#arr)" />
       <text
         x={short ? x2 + 4 : (x1 + x2) / 2}
@@ -207,8 +243,7 @@ export function BendTable({ analysis, settings }: { analysis: Analysis; settings
       <tfoot>
         <tr>
           <td colSpan={7} className="muted">
-            Pozycja = {REF_LABEL[settings.bendLineReference]}, mierzona od końca A (zielony). Nastawa uwzględnia
-            sprężynowanie.
+            Pozycja = {REF_LABEL[settings.bendLineReference]}, mierzona od końca A (zielony). Nastawa uwzględnia sprężynowanie.
           </td>
         </tr>
       </tfoot>

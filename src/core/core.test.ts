@@ -4,7 +4,16 @@ import { bendAllowance, bendDeduction, setback } from './bending';
 import { buildAssembly } from './assembly';
 import { buildPath, collisionIssues } from './geometry';
 import { Vector3 } from 'three';
-import { DEFAULT_SETTINGS, bend, migrateBusbar, newBusbar, straight, type Busbar, type MachineSettings, type Section } from './model';
+import {
+  DEFAULT_SETTINGS,
+  bend,
+  migrateBusbar,
+  newBusbar,
+  straight,
+  type Busbar,
+  type MachineSettings,
+  type Section,
+} from './model';
 
 const S40x10: Section = { width: 40, thickness: 10, material: 'Cu' };
 const settings: MachineSettings = { ...DEFAULT_SETTINGS, k: 0.4, radius: 10, minLeg: 0 };
@@ -34,7 +43,6 @@ describe('analyze', () => {
     expect(an.issues.filter((i) => i.level === 'error')).toHaveLength(0);
   });
 
-
   it('reports too short leg', () => {
     const bar = newBusbar(S40x10, [straight(15), bend(90, 'up', 10), straight(100)]);
     const an = analyze(bar, settings);
@@ -45,7 +53,6 @@ describe('analyze', () => {
     const bar = newBusbar(S40x10, [bend(90, 'up', 10), straight(100)]);
     expect(analyze(bar, settings).issues.some((i) => i.level === 'error' && i.stepIndex === 0)).toBe(true);
   });
-
 });
 
 describe('geometry', () => {
@@ -59,15 +66,8 @@ describe('geometry', () => {
     expect(size.z).toBeCloseTo(40, 6);
   });
 
-
   it('Z offset keeps legs parallel', () => {
-    const bar = newBusbar(S40x10, [
-      straight(150),
-      bend(45, 'up', 10),
-      straight(80),
-      bend(45, 'down', 10),
-      straight(150),
-    ]);
+    const bar = newBusbar(S40x10, [straight(150), bend(45, 'up', 10), straight(80), bend(45, 'down', 10), straight(150)]);
     const path = buildPath(bar, analyze(bar, settings));
     const end = path.samples[path.samples.length - 1];
     expect(end.t.x).toBeCloseTo(1, 6);
@@ -90,13 +90,7 @@ describe('geometry', () => {
   });
 
   it('no collision for simple U', () => {
-    const bar = newBusbar(S40x10, [
-      straight(150),
-      bend(90, 'up', 10),
-      straight(200),
-      bend(90, 'up', 10),
-      straight(150),
-    ]);
+    const bar = newBusbar(S40x10, [straight(150), bend(90, 'up', 10), straight(200), bend(90, 'up', 10), straight(150)]);
     const path = buildPath(bar, analyze(bar, settings));
     expect(collisionIssues(bar, path)).toHaveLength(0);
   });
@@ -138,7 +132,11 @@ describe('holes', () => {
   });
 
   it('reports hole inside the bend zone', () => {
-    const bar = newBusbar(S40x10, [straight(100, [{ position: 95, offset: 0, diameter: 13, slot: 0 }]), bend(90, 'up', 10), straight(100)]);
+    const bar = newBusbar(S40x10, [
+      straight(100, [{ position: 95, offset: 0, diameter: 13, slot: 0 }]),
+      bend(90, 'up', 10),
+      straight(100),
+    ]);
     expect(analyze(bar, settings).issues.some((i) => i.level === 'error' && i.stepIndex === 0)).toBe(true);
   });
 

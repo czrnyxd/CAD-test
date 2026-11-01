@@ -1,9 +1,27 @@
 import { bendAllowance, machineAngle, minRadius, setback } from './bending';
 import type { BendStep, Busbar, Direction, MachineSettings } from './model';
 
+export type IssueCode =
+  | 'empty'
+  | 'bend-neighbours'
+  | 'bend-angle'
+  | 'bend-radius'
+  | 'leg-length'
+  | 'leg-short'
+  | 'leg-min'
+  | 'hole-diameter'
+  | 'hole-outside'
+  | 'hole-near-bend'
+  | 'hole-width'
+  | 'stock-length'
+  | 'collision';
+
 export interface Issue {
   level: 'error' | 'warning';
+  code: IssueCode;
   stepIndex?: number;
+  /** Hole the issue refers to, if any. */
+  holeId?: string;
   message: string;
 }
 
@@ -68,28 +86,39 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
   });
 
   // Validation of step order and bend parameters.
-  if (steps.length === 0) issues.push({ level: 'error', message: 'Szyna nie ma żadnych odcinków.' });
+  if (steps.length === 0) issues.push({ level: 'error', code: 'empty', message: 'Szyna nie ma żadnych odcinków.' });
   steps.forEach((s, i) => {
     if (s.kind === 'bend') {
       const prev = steps[i - 1];
       const next = steps[i + 1];
       if (!prev || prev.kind !== 'straight' || !next || next.kind !== 'straight') {
-        issues.push({ level: 'error', stepIndex: i, message: 'Gięcie musi mieć odcinek prosty przed i za sobą.' });
+        issues.push({
+          level: 'error',
+          code: 'bend-neighbours',
+          stepIndex: i,
+          message: 'Gięcie musi mieć odcinek prosty przed i za sobą.',
+        });
       }
       if (!(s.angle > 0 && s.angle < 180)) {
-        issues.push({ level: 'error', stepIndex: i, message: 'Kąt gięcia musi być większy od 0° i mniejszy od 180°.' });
+        issues.push({
+          level: 'error',
+          code: 'bend-angle',
+          stepIndex: i,
+          message: 'Kąt gięcia musi być większy od 0° i mniejszy od 180°.',
+        });
       }
       const rMin = minRadius(section);
       if (s.radius < rMin) {
         issues.push({
           level: 'warning',
+          code: 'bend-radius',
           stepIndex: i,
           message: `Promień R${fmt(s.radius)} mniejszy niż zalecany R${fmt(rMin)} – ryzyko pęknięcia.`,
         });
       }
     }
     if (s.kind === 'straight' && !(s.length > 0)) {
-      issues.push({ level: 'error', stepIndex: i, message: 'Długość odcinka musi być większa od 0.' });
+      issues.push({ level: 'error', code: 'leg-length', stepIndex: i, message: 'Długość odcinka musi być większa od 0.' });
     }
   });
 
@@ -108,12 +137,14 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
       const needed = (steps[i] as { length: number }).length - net;
       issues.push({
         level: 'error',
+        code: 'leg-short',
         stepIndex: i,
         message: `Odcinek za krótki dla tych gięć – minimum ${fmt(needed)} mm.`,
       });
     } else if (touchesBend && net < settings.minLeg) {
       issues.push({
         level: 'warning',
+        code: 'leg-min',
         stepIndex: i,
         message: `Prosta część odcinka ${fmt(net)} mm < ${fmt(settings.minLeg)} mm (min. ramię maszyny).`,
       });
@@ -159,10 +190,18 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
       const lo = posOnStraight - length / 2;
       const hi = posOnStraight + length / 2;
       if (!(h.diameter > 0)) {
-        issues.push({ level: 'error', stepIndex: i, message: 'Średnica otworu musi być większa od 0.' });
+        issues.push({
+          level: 'error',
+          code: 'hole-diameter',
+          holeId: h.id,
+          stepIndex: i,
+          message: 'Średnica otworu musi być większa od 0.',
+        });
       } else if (lo < 0 || hi > net) {
         issues.push({
           level: 'error',
+          code: 'hole-outside',
+          holeId: h.id,
           stepIndex: i,
           message: `Otwór ${holeLabel(h)} wychodzi poza prostą część odcinka (0–${fmt(net)} mm od ${before ? 'końca łuku' : 'końca szyny'}).`,
         });
@@ -173,13 +212,21 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
         if (nearPrev || nearNext) {
           issues.push({
             level: 'warning',
+            code: 'hole-near-bend',
+            holeId: h.id,
             stepIndex: i,
             message: `Otwór ${holeLabel(h)} bliżej niż ${fmt(margin)} mm od gięcia – może się zdeformować.`,
           });
         }
       }
       if (Math.abs(h.offset) + h.diameter / 2 > section.width / 2) {
-        issues.push({ level: 'error', stepIndex: i, message: `Otwór ${holeLabel(h)} wychodzi poza szerokość szyny.` });
+        issues.push({
+          level: 'error',
+          code: 'hole-width',
+          holeId: h.id,
+          stepIndex: i,
+          message: `Otwór ${holeLabel(h)} wychodzi poza szerokość szyny.`,
+        });
       }
     }
   });
@@ -189,6 +236,7 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
   if (flatLength > settings.maxLength) {
     issues.push({
       level: 'warning',
+      code: 'stock-length',
       message: `Długość cięcia ${fmt(flatLength)} mm przekracza długość handlową ${fmt(settings.maxLength)} mm.`,
     });
   }
@@ -207,8 +255,7 @@ function makeBend(
 ): BendInfo {
   const center = start + ba / 2;
   const end = start + ba;
-  const position =
-    settings.bendLineReference === 'start' ? start : settings.bendLineReference === 'end' ? end : center;
+  const position = settings.bendLineReference === 'start' ? start : settings.bendLineReference === 'end' ? end : center;
   return {
     no,
     stepIndex,

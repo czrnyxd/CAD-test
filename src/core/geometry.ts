@@ -66,7 +66,14 @@ export function buildPath(bar: Busbar, an: Analysis): BarPath {
         for (let k = 1; k <= n; k++) {
           const q = new Quaternion().setFromAxisAngle(axis, dTheta * k);
           const p = base.p.clone().sub(center).applyQuaternion(q).add(center);
-          push(p, base.t.clone().applyQuaternion(q), base.n.clone().applyQuaternion(q), base.w.clone().applyQuaternion(q), i, rc * dTheta);
+          push(
+            p,
+            base.t.clone().applyQuaternion(q),
+            base.n.clone().applyQuaternion(q),
+            base.w.clone().applyQuaternion(q),
+            i,
+            rc * dTheta,
+          );
         }
       }
     }
@@ -83,7 +90,11 @@ export function buildPath(bar: Busbar, an: Analysis): BarPath {
 export function sectionCorners(s: PathSample, width: number, thickness: number): Vector3[] {
   const hw = width / 2;
   const ht = thickness / 2;
-  const c = (a: number, b: number) => s.p.clone().addScaledVector(s.w, a * hw).addScaledVector(s.n, b * ht);
+  const c = (a: number, b: number) =>
+    s.p
+      .clone()
+      .addScaledVector(s.w, a * hw)
+      .addScaledVector(s.n, b * ht);
   return [c(-1, 1), c(1, 1), c(1, -1), c(-1, -1)];
 }
 
@@ -135,6 +146,7 @@ export function collisionIssues(bar: Busbar, path: BarPath): Issue[] {
         return [
           {
             level: 'error',
+            code: 'collision',
             stepIndex: pts[j].step,
             message: 'Szyna koliduje sama ze sobą – zmień długości lub kierunki gięć.',
           },

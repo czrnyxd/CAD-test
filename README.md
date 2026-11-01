@@ -7,7 +7,9 @@ Wczesny prototyp aplikacji na tablet do projektowania giętych szyn miedzianych.
 ```bash
 npm install
 npm run dev        # serwer deweloperski, dostępny też w sieci lokalnej (np. z tabletu)
-npm test           # testy obliczeń
+npm test           # testy obliczeń i geometrii
+npm run lint       # formatowanie (Prettier) i typy
+npm run format     # automatyczne formatowanie kodu
 npm run build      # wersja produkcyjna w katalogu dist/ (statyczne pliki)
 ```
 
@@ -22,12 +24,12 @@ Jednorazowa konfiguracja na github.com (da się zrobić z telefonu):
 2. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 3. **Actions → Deploy to GitHub Pages → Run workflow** (albo dowolny nowy push).
 
-Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („Dodaj do ekranu głównego”), żeby otwierała się jak aplikacja.
+Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („Dodaj do ekranu głównego”), żeby otwierała się jak aplikacja. Po pierwszym otwarciu aplikacja działa także **bez internetu** (service worker), a po powrocie sieci sama pobiera nowszą wersję.
 
 ## Co działa
 
 - **Edytor kroków:** odcinki i gięcia płaskie (przez grubość szyny). Wartości wpisuje się na dużej klawiaturze numerycznej z szybkimi kątami. Kierunek gięcia wybiera się przyciskami ↑ w górę / ↓ w dół. Nowe gięcie wstawia się za zaznaczonym odcinkiem.
-- **Otwory:** okrągłe i fasolki na odcinkach prostych. Pozycja wzdłuż odcinka (tak jak jego wymiar), średnica, długość fasolki i przesunięcie od osi. Na rozwinięciu są wymiary od końca A i osobna tabela otworów. Aplikacja ostrzega, gdy otwór jest w strefie gięcia, za blisko gięcia albo poza szerokością szyny.
+- **Otwory:** okrągłe i fasolki na odcinkach prostych. Pozycja wzdłuż odcinka (tak jak jego wymiar), średnica, długość fasolki i przesunięcie od osi. W modelu 3D otwory są przelotowe (ze ściankami, widać przez nie na wylot) i mają numery O1, O2… zgodne z tabelą. Na rozwinięciu są wymiary od końca A i osobna tabela otworów. Aplikacja ostrzega, gdy otwór jest w strefie gięcia, za blisko gięcia albo poza szerokością szyny.
 - **Podwójna szyna:** dwie szyny gięte w pakiecie, druga nad albo pod pierwszą, z opcjonalnym odstępem. W każdym gięciu szyna wewnętrzna ma promień narzędzia, a zewnętrzna R + grubość + odstęp. Łuki są współśrodkowe, szyny przylegają, a otwory wypadają na sobie. Każda szyna ma własną długość cięcia, tabelę gięć i otworów oraz rysunek. Wymiary wpisuje się dla szyny 1.
 - **Model 3D:**
   - obrót jednym palcem, zoom i przesuwanie dwoma,
@@ -41,7 +43,7 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
   - nastawa kąta z korektą sprężynowania,
   - wymiarowanie po zewnętrznej, wewnętrznej lub po osi.
 - **Walidacje:** za krótkie odcinki, minimalne ramię, minimalny promień, długość handlowa, kolizja szyny z samą sobą.
-- **Rozwinięcie:** rysunek z wymiarami łańcuchowymi i od bazy, strefy gięć, tabela gięć dla operatora.
+- **Rozwinięcie:** widok na górną stronę szyny (↑ = gięcie w stronę patrzącego), wymiary łańcuchowe i od bazy, strefy gięć, otwory, tabela gięć dla operatora.
 - **Wydruk A4 / PDF:** nagłówek zlecenia, widok 3D, tabela gięć, rozwinięcie.
 - **Projekty:** autozapis w przeglądarce (localStorage), lista projektów, kopiowanie, eksport i import JSON, cofnij/ponów.
 - **Ustawienia maszyny:** promień narzędzia, K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
@@ -57,7 +59,7 @@ src/store.ts   stan aplikacji, historia cofnij/ponów, zapis lokalny
 ## Ograniczenia prototypu
 
 - Współczynniki K i sprężynowania to wartości przykładowe. Trzeba je skalibrować na próbkach z maszyny.
-- Brak eksportu DXF, kreatora kalibracji i trybu offline (service worker). To kolejne etapy z planu.
+- Brak eksportu DXF i kreatora kalibracji. To kolejne etapy z planu.
 - Podwójna szyna zakłada, że zewnętrzną szynę da się giąć z promieniem R + grubość + odstęp. Do sprawdzenia, czy giętarka ma takie narzędzie albo czy gięcie zewnętrznej szyny wykonuje się inaczej.
 - Kierunki „w górę/w dół” są liczone względem szyny w chwili gięcia. Do ustalenia z operatorem, jak to przełożyć na ułożenie szyny w maszynie.
 - Giętarka robi tylko gięcia płaskie, więc gięć na kant i skrętów celowo nie ma. Starsze projekty z nimi są przy wczytaniu konwertowane: gięcie na kant staje się płaskim, a skręt jest usuwany.

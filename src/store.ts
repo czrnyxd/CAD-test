@@ -74,7 +74,11 @@ function initialState(): { bar: Busbar; settings: MachineSettings } {
   const currentId = lsGet(LS_CURRENT);
   const bar =
     (currentId && projects[currentId]) ||
-    newBusbar(SECTIONS.find((s) => s.width === 40 && s.thickness === 10)!, TEMPLATES[1].build(settings), 'Szyna L');
+    newBusbar(
+      SECTIONS.find((s) => s.width === 40 && s.thickness === 10)!,
+      TEMPLATES[1].build(settings),
+      'Szyna L',
+    );
   return { bar, settings };
 }
 

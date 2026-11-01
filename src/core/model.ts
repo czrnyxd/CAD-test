@@ -92,8 +92,21 @@ export const DEFAULT_SETTINGS: MachineSettings = {
 };
 
 export const SECTIONS: Section[] = [
-  [12, 2], [15, 3], [20, 3], [20, 5], [25, 5], [30, 5], [30, 10], [40, 5], [40, 10],
-  [50, 5], [50, 10], [60, 10], [80, 10], [100, 10], [120, 10],
+  [12, 2],
+  [15, 3],
+  [20, 3],
+  [20, 5],
+  [25, 5],
+  [30, 5],
+  [30, 10],
+  [40, 5],
+  [40, 10],
+  [50, 5],
+  [50, 10],
+  [60, 10],
+  [80, 10],
+  [100, 10],
+  [120, 10],
 ].map(([w, t]) => ({ width: w, thickness: t, material: 'Cu' as const }));
 
 export function sectionLabel(s: Section): string {
