@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { fmt, type Analysis, type Issue } from '../core/analyze';
 import { minRadius } from '../core/bending';
 import { doubleConfig } from '../core/assembly';
+import { removeStep } from '../core/edit';
 import {
   DIRECTION_ARROW,
   DIRECTION_LABEL,
@@ -87,25 +88,7 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
   };
 
   const remove = (i: number) => {
-    const s = bar.steps[i];
-    updateSteps((steps) => {
-      if (s.kind === 'straight') {
-        // Removing a leg also removes the bend before it (or after, for the first leg).
-        if (steps.length <= 1) return steps;
-        if (i > 0 && steps[i - 1].kind !== 'straight') return steps.filter((_, k) => k !== i && k !== i - 1);
-        if (steps[i + 1] && steps[i + 1].kind !== 'straight') return steps.filter((_, k) => k !== i && k !== i + 1);
-        return steps.filter((_, k) => k !== i);
-      }
-      // Removing a bend merges the two neighbouring legs.
-      const prev = steps[i - 1];
-      const next = steps[i + 1];
-      if (prev?.kind === 'straight' && next?.kind === 'straight') {
-        const holes = [...(prev.holes ?? []), ...(next.holes ?? []).map((h) => ({ ...h, position: h.position + prev.length }))];
-        const merged = { ...prev, length: prev.length + next.length, holes };
-        return [...steps.slice(0, i - 1), merged, ...steps.slice(i + 2)];
-      }
-      return steps.filter((_, k) => k !== i);
-    });
+    updateSteps((steps) => removeStep(steps, i));
     onSelect(null);
   };
 
@@ -162,12 +145,13 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
           };
           if (s.kind === 'straight') {
             legNo++;
+            const n = legNo; // captured for click handlers (legNo keeps changing while rendering)
             const net = analysis.netStraight[i];
             return (
               <div key={s.id} {...common}>
                 <div className="step-head">
                   <span className="step-icon">━</span>
-                  <span className="step-title">Odcinek {legNo}</span>
+                  <span className="step-title">Odcinek {n}</span>
                   <Del onClick={() => remove(i)} disabled={bar.steps.length <= 1} />
                 </div>
                 <div className="step-body">
@@ -177,7 +161,7 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
                     value={`${fmt(s.length)} mm`}
                     onClick={() =>
                       numpad({
-                        title: `Odcinek ${legNo} – długość (${bar.dimensionMode === 'outside' ? 'zewn.' : bar.dimensionMode === 'inside' ? 'wewn.' : 'oś'})`,
+                        title: `Odcinek ${n} – długość (${bar.dimensionMode === 'outside' ? 'zewn.' : bar.dimensionMode === 'inside' ? 'wewn.' : 'oś'})`,
                         value: s.length,
                         unit: 'mm',
                         min: 1,
@@ -192,7 +176,6 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
                 </div>
                 {(s.holes ?? []).map((h) => {
                   const info = analysis.holes.find((x) => x.holeId === h.id);
-                  const n = legNo;
                   const ref = i === 0 ? 'od końca A' : REF_TEXT[bar.dimensionMode];
                   return (
                     <div className="hole-row" key={h.id}>
@@ -330,6 +313,11 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
                     }
                   />
                 </div>
+                {s.radius !== settings.radius && (
+                  <div className="step-note radius-note">
+                    R{fmt(s.radius)} ≠ narzędzie R{fmt(settings.radius)} – sprawdź, czy maszyna ma takie narzędzie
+                  </div>
+                )}
                 {info && (
                   <div className="step-note">
                     nastawa {fmt(info.machineAngle)}° · pozycja {fmt(info.position)} mm

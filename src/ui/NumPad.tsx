@@ -42,13 +42,20 @@ export function NumPad({ req, onClose }: { req: NumPadRequest; onClose: () => vo
     onClose();
   };
 
+  // Take focus away from the field that opened the keypad, so Enter does not reopen it.
+  useEffect(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (/^[0-9]$/.test(e.key)) press(e.key);
       else if (e.key === ',' || e.key === '.') press(',');
       else if (e.key === 'Backspace') press('⌫');
-      else if (e.key === 'Enter') ok();
-      else if (e.key === 'Escape') onClose();
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        ok();
+      } else if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -62,7 +69,8 @@ export function NumPad({ req, onClose }: { req: NumPadRequest; onClose: () => vo
         : '';
 
   return (
-    <div className="modal-backdrop" onPointerDown={onClose}>
+    // Tapping beside the keypad does not close it (easy to do with gloves); only Cancel / OK / Esc do.
+    <div className="modal-backdrop">
       <div className="numpad" onPointerDown={(e) => e.stopPropagation()}>
         <div className="numpad-title">{req.title}</div>
         <div className={`numpad-display ${valid ? '' : 'invalid'} ${fresh ? 'fresh' : ''}`}>

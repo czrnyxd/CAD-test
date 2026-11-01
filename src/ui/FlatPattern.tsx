@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { fmt, type Analysis } from '../core/analyze';
 import { DIRECTION_ARROW, DIRECTION_LABEL, type Busbar, type MachineSettings } from '../core/model';
 
@@ -12,6 +13,8 @@ interface Props {
 }
 
 export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props) {
+  // Each drawing needs its own marker id: a hidden copy (e.g. the print sheet) must not hide the arrows of another.
+  const arrowId = `arr-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const L = Math.max(analysis.flatLength, 1);
   const W = bar.section.width;
   const mL = 70;
@@ -44,7 +47,7 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
   return (
     <svg className="flat-svg" viewBox={`0 0 ${width} ${height}`} width="100%" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <marker id="arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <marker id={arrowId} viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="#222" />
         </marker>
       </defs>
@@ -126,12 +129,13 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
 
       {/* chain dimensions */}
       {chain.map(([a, b], k) => (
-        <Dim key={`c${k}`} x1={X(a)} x2={X(b)} y={yChain} yFrom={yBarTop} text={fmt(b - a)} />
+        <Dim arrowId={arrowId} key={`c${k}`} x1={X(a)} x2={X(b)} y={yChain} yFrom={yBarTop} text={fmt(b - a)} />
       ))}
 
       {/* baseline dimensions from start */}
       {bends.map((b, k) => (
         <Dim
+          arrowId={arrowId}
           key={`d${k}`}
           x1={X(0)}
           x2={X(b.position)}
@@ -144,6 +148,7 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
       {/* hole positions from start */}
       {holes.map((h, k) => (
         <Dim
+          arrowId={arrowId}
           key={`hd${k}`}
           x1={X(0)}
           x2={X(h.flatPos)}
@@ -155,7 +160,7 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
       ))}
 
       {/* total length */}
-      <Dim x1={X(0)} x2={X(L)} y={yTotal} yFrom={yBarBot} text={`L = ${fmt(L)} mm`} bold />
+      <Dim arrowId={arrowId} x1={X(0)} x2={X(L)} y={yTotal} yFrom={yBarBot} text={`L = ${fmt(L)} mm`} bold />
 
       <text x={width - mR} y={height - 6} textAnchor="end" className="t-small">
         Widok na górną stronę szyny (↑ = gięcie w stronę patrzącego) · linie gięcia: {REF_LABEL[settings.bendLineReference]} ·
@@ -166,6 +171,7 @@ export function FlatPatternSvg({ bar, analysis, settings, width = 1100 }: Props)
 }
 
 function Dim({
+  arrowId,
   x1,
   x2,
   y,
@@ -174,6 +180,7 @@ function Dim({
   bold,
   hole,
 }: {
+  arrowId: string;
   x1: number;
   x2: number;
   y: number;
@@ -195,7 +202,16 @@ function Dim({
         strokeWidth="0.8"
         strokeDasharray={hole ? '3 3' : undefined}
       />
-      <line x1={x1} y1={y} x2={x2} y2={y} stroke="#222" strokeWidth="1" markerStart="url(#arr)" markerEnd="url(#arr)" />
+      <line
+        x1={x1}
+        y1={y}
+        x2={x2}
+        y2={y}
+        stroke="#222"
+        strokeWidth="1"
+        markerStart={`url(#${arrowId})`}
+        markerEnd={`url(#${arrowId})`}
+      />
       <text
         x={short ? x2 + 4 : (x1 + x2) / 2}
         y={y - 4}

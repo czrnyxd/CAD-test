@@ -13,6 +13,9 @@ export type IssueCode =
   | 'hole-outside'
   | 'hole-near-bend'
   | 'hole-width'
+  | 'hole-edge'
+  | 'hole-overlap'
+  | 'hole-bridge'
   | 'stock-length'
   | 'collision';
 
@@ -167,70 +170,105 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
     pos += len;
   });
 
-  // Holes (on straight parts only).
+  // Holes (on straight parts only): positions first, then numbering along the bar, then checks.
   const holes: HoleInfo[] = [];
   steps.forEach((s, i) => {
     if (s.kind !== 'straight' || !s.holes?.length) return;
     const before = steps[i - 1]?.kind === 'bend' ? setbacks[i - 1] : 0;
-    const net = Math.max(0, netStraight[i] ?? 0);
-    const seg = segments[i];
     for (const h of s.holes) {
-      const length = Math.max(h.slot || 0, h.diameter);
       const posOnStraight = h.position - before;
       holes.push({
         no: 0,
         stepIndex: i,
         holeId: h.id,
         posOnStraight,
-        flatPos: seg.flatStart + posOnStraight,
+        flatPos: segments[i].flatStart + posOnStraight,
         offset: h.offset,
         diameter: h.diameter,
-        length,
+        length: Math.max(h.slot || 0, h.diameter),
       });
-      const lo = posOnStraight - length / 2;
-      const hi = posOnStraight + length / 2;
-      if (!(h.diameter > 0)) {
-        issues.push({
-          level: 'error',
-          code: 'hole-diameter',
-          holeId: h.id,
-          stepIndex: i,
-          message: 'Średnica otworu musi być większa od 0.',
-        });
-      } else if (lo < 0 || hi > net) {
-        issues.push({
-          level: 'error',
-          code: 'hole-outside',
-          holeId: h.id,
-          stepIndex: i,
-          message: `Otwór ${holeLabel(h)} wychodzi poza prostą część odcinka (0–${fmt(net)} mm od ${before ? 'końca łuku' : 'końca szyny'}).`,
-        });
-      } else {
-        const margin = 1.5 * section.thickness;
-        const nearPrev = steps[i - 1]?.kind === 'bend' && lo < margin;
-        const nearNext = steps[i + 1]?.kind === 'bend' && net - hi < margin;
-        if (nearPrev || nearNext) {
-          issues.push({
-            level: 'warning',
-            code: 'hole-near-bend',
-            holeId: h.id,
-            stepIndex: i,
-            message: `Otwór ${holeLabel(h)} bliżej niż ${fmt(margin)} mm od gięcia – może się zdeformować.`,
-          });
-        }
-      }
-      if (Math.abs(h.offset) + h.diameter / 2 > section.width / 2) {
-        issues.push({
-          level: 'error',
-          code: 'hole-width',
-          holeId: h.id,
-          stepIndex: i,
-          message: `Otwór ${holeLabel(h)} wychodzi poza szerokość szyny.`,
-        });
-      }
     }
   });
   holes.sort((a, b) => a.flatPos - b.flatPos).forEach((h, k) => (h.no = k + 1));
+
+  const T = section.thickness;
+  const lastStraight = steps.length - 1 - [...steps].reverse().findIndex((s) => s.kind === 'straight');
+  for (const h of holes) {
+    const i = h.stepIndex;
+    const name = `O${h.no} (${holeLabel(h)})`;
+    const push = (level: Issue['level'], code: IssueCode, message: string) =>
+      issues.push({ level, code, holeId: h.holeId, stepIndex: i, message });
+    const net = Math.max(0, netStraight[i] ?? 0);
+    const lo = h.posOnStraight - h.length / 2;
+    const hi = h.posOnStraight + h.length / 2;
+    const bridge = minBridge(h, T);
+    const prevBend = steps[i - 1]?.kind === 'bend';
+    const nextBend = steps[i + 1]?.kind === 'bend';
+
+    if (!(h.diameter > 0)) {
+      push('error', 'hole-diameter', `Otwór O${h.no}: średnica musi być większa od 0.`);
+      continue;
+    }
+    if (lo < 0 || hi > net) {
+      push(
+        'error',
+        'hole-outside',
+        `Otwór ${name} wychodzi poza prostą część odcinka (0–${fmt(net)} mm od ${prevBend ? 'końca łuku' : 'końca szyny'}).`,
+      );
+    } else {
+      const margin = 1.5 * T;
+      if ((prevBend && lo < margin) || (nextBend && net - hi < margin)) {
+        push('warning', 'hole-near-bend', `Otwór ${name} bliżej niż ${fmt(margin)} mm od gięcia – może się zdeformować.`);
+      }
+      const startGap = !prevBend && i === 0 ? lo : Infinity;
+      const endGap = !nextBend && i === lastStraight ? net - hi : Infinity;
+      if (Math.min(startGap, endGap) < bridge) {
+        push(
+          'warning',
+          'hole-edge',
+          `Otwór ${name}: tylko ${fmt(Math.min(startGap, endGap))} mm materiału do końca szyny (zalecane ≥ ${fmt(bridge)} mm).`,
+        );
+      }
+    }
+    const side = section.width / 2 - Math.abs(h.offset) - h.diameter / 2;
+    if (side < 0) {
+      push('error', 'hole-width', `Otwór ${name} wychodzi poza szerokość szyny.`);
+    } else if (side < bridge) {
+      push(
+        'warning',
+        'hole-edge',
+        `Otwór ${name}: tylko ${fmt(side)} mm materiału do boku szyny (zalecane ≥ ${fmt(bridge)} mm).`,
+      );
+    }
+  }
+
+  // Holes on the same leg must not overlap and need a bridge of material between them.
+  for (let a = 0; a < holes.length; a++) {
+    for (let b = a + 1; b < holes.length; b++) {
+      const ha = holes[a];
+      const hb = holes[b];
+      if (ha.stepIndex !== hb.stepIndex || !(ha.diameter > 0 && hb.diameter > 0)) continue;
+      const gap = holeGap(ha, hb);
+      const bridge = Math.min(minBridge(ha, T), minBridge(hb, T));
+      if (gap < 0) {
+        issues.push({
+          level: 'error',
+          code: 'hole-overlap',
+          holeId: hb.holeId,
+          stepIndex: hb.stepIndex,
+          message: `Otwory O${ha.no} i O${hb.no} nachodzą na siebie.`,
+        });
+      } else if (gap < bridge) {
+        issues.push({
+          level: 'warning',
+          code: 'hole-bridge',
+          holeId: hb.holeId,
+          stepIndex: hb.stepIndex,
+          message: `Między otworami O${ha.no} i O${hb.no} jest tylko ${fmt(gap)} mm materiału (zalecane ≥ ${fmt(bridge)} mm).`,
+        });
+      }
+    }
+  }
 
   const flatLength = pos;
   if (flatLength > settings.maxLength) {
@@ -272,8 +310,28 @@ function makeBend(
   };
 }
 
-function holeLabel(h: { diameter: number; slot: number }): string {
-  return h.slot > h.diameter ? `${fmt(h.diameter)}×${fmt(h.slot)}` : `Ø${fmt(h.diameter)}`;
+function holeLabel(h: { diameter: number; length: number }): string {
+  return h.length > h.diameter ? `${fmt(h.diameter)}×${fmt(h.length)}` : `Ø${fmt(h.diameter)}`;
+}
+
+/** Recommended minimum material between a hole and an edge or another hole (rule of thumb). */
+export function minBridge(h: { diameter: number }, thickness: number): number {
+  return Math.min(thickness, h.diameter / 2);
+}
+
+/**
+ * Material between two holes of the same leg (negative = overlap). Holes are capsules: a segment
+ * along the bar (length − diameter) swept by a circle of the hole radius.
+ */
+export function holeGap(
+  a: { posOnStraight: number; offset: number; diameter: number; length: number },
+  b: { posOnStraight: number; offset: number; diameter: number; length: number },
+): number {
+  const ha = Math.max(0, a.length / 2 - a.diameter / 2);
+  const hb = Math.max(0, b.length / 2 - b.diameter / 2);
+  const dx = Math.max(0, Math.abs(a.posOnStraight - b.posOnStraight) - ha - hb);
+  const dy = Math.abs(a.offset - b.offset);
+  return Math.hypot(dx, dy) - a.diameter / 2 - b.diameter / 2;
 }
 
 /** Format a number in Polish style with up to 1 decimal place. */

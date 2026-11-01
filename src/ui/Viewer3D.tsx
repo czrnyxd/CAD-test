@@ -59,6 +59,9 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Prop
   const fittedFor = useRef<string | null>(null);
   const keyPts = useRef<THREE.Vector3[]>([]);
 
+  // A measurement belongs to the shape it was taken on – clear it when the bar changes.
+  useEffect(() => setPoints([]), [assembly]);
+
   // Init renderer once.
   useEffect(() => {
     const host = hostRef.current!;
@@ -201,6 +204,12 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Prop
       for (const part of assembly.parts) {
         const s0 = part.path.samples[0];
         const start = label(double ? `A${part.index}` : 'A', 'lbl-start');
+        // Bars are only one thickness apart: push the labels apart on screen (bar 2 above / below).
+        if (double) {
+          const otherOffset = assembly.parts.find((q) => q !== part)!.offset;
+          const isUpper = part.offset > otherOffset;
+          start.center.set(0.5, isUpper ? 1.15 : -0.15);
+        }
         start.position
           .copy(s0.p)
           .addScaledVector(s0.t, -bar.section.width * 0.6)

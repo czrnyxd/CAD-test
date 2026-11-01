@@ -42,11 +42,11 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
   - pozycje linii gięć (początek, środek lub koniec łuku),
   - nastawa kąta z korektą sprężynowania,
   - wymiarowanie po zewnętrznej, wewnętrznej lub po osi.
-- **Walidacje:** za krótkie odcinki, minimalne ramię, minimalny promień, długość handlowa, kolizja szyny z samą sobą.
+- **Walidacje:** za krótkie odcinki, minimalne ramię, minimalny promień, długość handlowa, kolizja szyny z samą sobą, otwory nachodzące na siebie lub z za cienkim mostkiem materiału (do krawędzi, końca, innego otworu). Projekt z błędami ma na rozwinięciu i wydruku oznaczenie „NIE DO PRODUKCJI”.
 - **Rozwinięcie:** widok na górną stronę szyny (↑ = gięcie w stronę patrzącego), wymiary łańcuchowe i od bazy, strefy gięć, otwory, tabela gięć dla operatora.
 - **Wydruk A4 / PDF:** nagłówek zlecenia, widok 3D, tabela gięć, rozwinięcie.
-- **Projekty:** autozapis w przeglądarce (localStorage), lista projektów, kopiowanie, eksport i import JSON, cofnij/ponów.
-- **Ustawienia maszyny:** promień narzędzia, K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
+- **Projekty:** autozapis w przeglądarce (localStorage, z ostrzeżeniem gdy zapis się nie uda), lista projektów, kopiowanie, eksport i import JSON, cofnij/ponów. Import sprawdza dane: odrzuca plik bez poprawnego przekroju lub odcinków, a każdą poprawkę (np. przy projekcie ze starszej wersji) pokazuje do sprawdzenia.
+- **Ustawienia maszyny:** nazwa maszyny, promień narzędzia (z przyciskiem „ustaw we wszystkich gięciach projektu”), K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
 
 ## Struktura
 
@@ -62,4 +62,4 @@ src/store.ts   stan aplikacji, historia cofnij/ponów, zapis lokalny
 - Brak eksportu DXF i kreatora kalibracji. To kolejne etapy z planu.
 - Podwójna szyna zakłada, że zewnętrzną szynę da się giąć z promieniem R + grubość + odstęp. Do sprawdzenia, czy giętarka ma takie narzędzie albo czy gięcie zewnętrznej szyny wykonuje się inaczej.
 - Kierunki „w górę/w dół” są liczone względem szyny w chwili gięcia. Do ustalenia z operatorem, jak to przełożyć na ułożenie szyny w maszynie.
-- Giętarka robi tylko gięcia płaskie, więc gięć na kant i skrętów celowo nie ma. Starsze projekty z nimi są przy wczytaniu konwertowane: gięcie na kant staje się płaskim, a skręt jest usuwany.
+- Giętarka robi tylko gięcia płaskie, więc gięć na kant i skrętów celowo nie ma. Starsze projekty z nimi są przy wczytaniu konwertowane (gięcie na kant staje się płaskim, strefa skrętu jest doliczana do odcinka) i aplikacja prosi o sprawdzenie projektu.

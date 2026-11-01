@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { HoleInfo } from '../core/analyze';
+import { holeGap, type HoleInfo } from '../core/analyze';
 import type { BarPart } from '../core/assembly';
 import { sectionCorners, type BarPath } from '../core/geometry';
 import type { Busbar } from '../core/model';
@@ -83,7 +83,8 @@ export function buildBarObject(
       h.posOnStraight - h.length / 2 > 0.01 &&
       h.posOnStraight + h.length / 2 < len - 0.01 &&
       Math.abs(h.offset) + h.diameter / 2 < W / 2 - 0.01;
-    if (fits) cutHoles.set(h.stepIndex, [...(cutHoles.get(h.stepIndex) ?? []), h]);
+    const overlaps = (opts.holes ?? []).some((o) => o !== h && o.stepIndex === h.stepIndex && holeGap(o, h) <= 0.01);
+    if (fits && !overlaps) cutHoles.set(h.stepIndex, [...(cutHoles.get(h.stepIndex) ?? []), h]);
     else decalHoles.push(h);
   }
   const holeEdgePts: number[] = [];

@@ -4,7 +4,6 @@ import { buildAssembly, type Assembly, type BarPart } from './core/assembly';
 import {
   DIMENSION_MODE_LABEL,
   SECTIONS,
-  migrateBusbar,
   newBusbar,
   sectionLabel,
   type Busbar,
@@ -13,6 +12,7 @@ import {
   type Section,
 } from './core/model';
 import { TEMPLATES } from './core/templates';
+import { sanitizeBusbar } from './core/sanitize';
 import { deleteProject, duplicateBar, loadProjects, useStore } from './store';
 import { BendTable, FlatPatternSvg, HoleTable } from './ui/FlatPattern';
 import { NumPad, type NumPadRequest } from './ui/NumPad';
@@ -33,7 +33,23 @@ const IN_FRAME = (() => {
 type Modal = null | 'new' | 'projects';
 
 export default function App() {
-  const { bar, settings, selected, past, future, update, updateSteps, undo, redo, select, setSettings, open } = useStore();
+  const {
+    bar,
+    settings,
+    selected,
+    past,
+    future,
+    saveOk,
+    notice,
+    update,
+    updateSteps,
+    undo,
+    redo,
+    select,
+    setSettings,
+    open,
+    setNotice,
+  } = useStore();
   const [tab, setTab] = useState<Tab>('model');
   const [modal, setModal] = useState<Modal>(null);
   const [np, setNp] = useState<NumPadRequest | null>(null);
@@ -60,6 +76,8 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') (e.shiftKey ? redo : undo)();
       if ((e.ctrlKey || e.metaKey) && e.key === 'y') redo();
     };
@@ -145,6 +163,11 @@ export default function App() {
         )}
         {tab === 'flat' && (
           <div className="flat-tab">
+            {errors > 0 && (
+              <div className="no-production">
+                ⛔ NIE DO PRODUKCJI – projekt zawiera błędy (szczegóły w kroku na zakładce Model 3D)
+              </div>
+            )}
             {double && (
               <div className="card double-note">
                 <b>Podwójna szyna.</b> Każdą szynę tnij i gnij według jej własnej tabeli. W gięciach szyna wewnętrzna ma promień
@@ -180,6 +203,25 @@ export default function App() {
           {toast}
         </div>
       )}
+      {notice && (
+        <div className="modal-backdrop">
+          <div className="modal notice">
+            <h2>Sprawdź projekt</h2>
+            <div className="notice-text">{notice}</div>
+            <div className="modal-actions">
+              <button className="btn-primary" onClick={() => setNotice(null)}>
+                Rozumiem
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {!saveOk && (
+        <div className="save-error">
+          ⚠ Nie udało się zapisać projektu w pamięci urządzenia (brak miejsca lub zablokowany zapis). Wyeksportuj projekt do pliku
+          w oknie „Projekty”.
+        </div>
+      )}
       {modal === 'new' && (
         <NewModal
           current={bar.section}
@@ -196,8 +238,8 @@ export default function App() {
         <ProjectsModal
           currentId={bar.id}
           onClose={() => setModal(null)}
-          onOpen={(b) => {
-            open(b);
+          onOpen={(b, changes) => {
+            open(b, changes);
             setModal(null);
             setTab('model');
           }}
@@ -222,6 +264,7 @@ function SettingsTab({
   setSettings: (s: Partial<MachineSettings>) => void;
   numpad: (r: NumPadRequest) => void;
 }) {
+  const otherRadius = bar.steps.filter((st) => st.kind === 'bend' && st.radius !== settings.radius).length;
   const num = (key: keyof MachineSettings, title: string, unit: string, min: number, max: number) => (
     <button
       className="field"
@@ -286,15 +329,40 @@ function SettingsTab({
       <div className="card">
         <h3>Maszyna i narzędzia</h3>
         <p className="muted">
-          Wartości K i sprężynowania należy skalibrować na próbkach z tej maszyny. Zmiana dotyczy wszystkich projektów.
+          K, sprężynowanie, minimalne ramię i długość handlowa działają od razu we wszystkich projektach. Promień narzędzia jest
+          używany dla nowych gięć – w istniejących gięciach zmieniasz go przyciskiem poniżej albo w każdym gięciu. Wartości K i
+          sprężynowania trzeba skalibrować na próbkach z tej maszyny.
         </p>
         <div className="fields">
+          <label className="field">
+            <span className="field-label">Nazwa maszyny (na wydruku)</span>
+            <input value={settings.machineName} onChange={(e) => setSettings({ machineName: e.target.value })} />
+          </label>
           {num('radius', 'Promień gięcia (narzędzie)', 'mm', 0, 500)}
           {num('k', 'Współczynnik K', '', 0, 1)}
           {num('springbackPct', 'Sprężynowanie', '%', 0, 30)}
           {num('minLeg', 'Minimalne ramię', 'mm', 0, 500)}
           {num('maxLength', 'Długość handlowa szyny', 'mm', 100, 12000)}
         </div>
+        {otherRadius > 0 && (
+          <div className="radius-mismatch">
+            <span>
+              W tym projekcie {otherRadius} {otherRadius === 1 ? 'gięcie ma' : 'gięć ma'} promień inny niż narzędzie (R
+              {fmt(settings.radius)}).
+            </span>
+            <button
+              className="btn-primary"
+              onClick={() =>
+                update((b) => ({
+                  ...b,
+                  steps: b.steps.map((st) => (st.kind === 'bend' ? { ...st, radius: settings.radius } : st)),
+                }))
+              }
+            >
+              Ustaw R{fmt(settings.radius)} we wszystkich gięciach
+            </button>
+          </div>
+        )}
         <div className="field-row">
           <span className="field-label">Pozycja gięcia ustawiana na</span>
           <div className="seg">
@@ -384,7 +452,15 @@ function TemplateIcon({ id }: { id: string }) {
   );
 }
 
-function ProjectsModal({ currentId, onClose, onOpen }: { currentId: string; onClose: () => void; onOpen: (b: Busbar) => void }) {
+function ProjectsModal({
+  currentId,
+  onClose,
+  onOpen,
+}: {
+  currentId: string;
+  onClose: () => void;
+  onOpen: (b: Busbar, changes?: string[]) => void;
+}) {
   const [projects, setProjects] = useState(() => loadProjects());
   const list = Object.values(projects).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const [q, setQ] = useState('');
@@ -462,15 +538,21 @@ function ProjectsModal({ currentId, onClose, onOpen }: { currentId: string; onCl
               onChange={async (e) => {
                 const f = e.target.files?.[0];
                 if (!f) return;
+                e.target.value = '';
+                let data: unknown;
                 try {
-                  const b = JSON.parse(await f.text()) as Busbar;
-                  if (!b.steps || !b.section) throw new Error('format');
-                  onOpen(
-                    duplicateBar(migrateBusbar({ ...b, name: b.name.replace(/ \(kopia\)$/, '') }, useStore.getState().settings)),
-                  );
+                  data = JSON.parse(await f.text());
                 } catch {
-                  setMsg('Nieprawidłowy plik projektu.');
+                  setMsg('Nie udało się odczytać pliku – to nie jest plik JSON.');
+                  return;
                 }
+                const res = sanitizeBusbar(data, useStore.getState().settings);
+                if (!res.bar) {
+                  setMsg(`Nie zaimportowano: ${res.error}`);
+                  return;
+                }
+                const copy = duplicateBar(res.bar);
+                onOpen({ ...copy, name: res.bar.name }, res.changes);
               }}
             />
           </label>
@@ -546,6 +628,9 @@ function PrintSheet({
   const first = assembly.parts[0];
   return (
     <div className={`print-sheet ${double ? 'print-double' : ''}`}>
+      {issues.some((i) => i.level === 'error') && (
+        <div className="no-production">⛔ NIE DO PRODUKCJI – projekt zawiera błędy</div>
+      )}
       <table className="print-header">
         <tbody>
           <tr>

@@ -4,16 +4,9 @@ import { bendAllowance, bendDeduction, setback } from './bending';
 import { buildAssembly } from './assembly';
 import { buildPath, collisionIssues } from './geometry';
 import { Vector3 } from 'three';
-import {
-  DEFAULT_SETTINGS,
-  bend,
-  migrateBusbar,
-  newBusbar,
-  straight,
-  type Busbar,
-  type MachineSettings,
-  type Section,
-} from './model';
+import { DEFAULT_SETTINGS, bend, newBusbar, straight, type MachineSettings, type Section, type StraightStep } from './model';
+import { sanitizeBusbar } from './sanitize';
+import { removeStep } from './edit';
 
 const S40x10: Section = { width: 40, thickness: 10, material: 'Cu' };
 const settings: MachineSettings = { ...DEFAULT_SETTINGS, k: 0.4, radius: 10, minLeg: 0 };
@@ -96,22 +89,108 @@ describe('geometry', () => {
   });
 });
 
-describe('migration of old projects', () => {
-  it('converts edge bends to flat and drops twists merging legs', () => {
-    const old = {
-      ...newBusbar(S40x10, []),
-      steps: [
-        { id: 'a', kind: 'straight', length: 100 },
-        { id: 'b', kind: 'twist', angle: 90, length: 80 },
-        { id: 'c', kind: 'straight', length: 50 },
-        { id: 'd', kind: 'bend', plane: 'edge', angle: 90, direction: 'right', radius: 40 },
-        { id: 'e', kind: 'straight', length: 70 },
-      ],
-    } as unknown as Busbar;
-    const bar = migrateBusbar(old, settings);
-    expect(bar.steps.map((s) => s.kind)).toEqual(['straight', 'bend', 'straight']);
-    expect(bar.steps[0]).toMatchObject({ length: 150 });
-    expect(bar.steps[1]).toMatchObject({ direction: 'down', radius: settings.radius });
+describe('reading projects (import / older versions)', () => {
+  const base = () => ({ ...newBusbar(S40x10, [straight(100)]) }) as unknown as Record<string, unknown>;
+
+  it('keeps the twist length and hole positions when a twist is removed', () => {
+    const res = sanitizeBusbar(
+      {
+        ...base(),
+        steps: [
+          { id: 'a', kind: 'straight', length: 100 },
+          { id: 'b', kind: 'twist', angle: 90, length: 80 },
+          { id: 'c', kind: 'straight', length: 50, holes: [{ id: 'h', position: 20, offset: 0, diameter: 13, slot: 0 }] },
+        ],
+      },
+      settings,
+    );
+    const st = res.bar!.steps[0] as StraightStep;
+    expect(res.bar!.steps).toHaveLength(1);
+    expect(st.length).toBe(230);
+    expect(st.holes![0].position).toBe(200);
+    expect(res.changes.some((c) => c.includes('skręt'))).toBe(true);
+  });
+
+  it('converts edge bends with a notice and does not turn 0° into 90°', () => {
+    const res = sanitizeBusbar(
+      {
+        ...base(),
+        steps: [
+          { id: 'a', kind: 'straight', length: 100 },
+          { id: 'd', kind: 'bend', plane: 'edge', angle: 90, direction: 'right', radius: 40 },
+          { id: 'e', kind: 'straight', length: 70 },
+          { id: 'f', kind: 'bend', angle: 0, direction: 'up', radius: 10 },
+          { id: 'g', kind: 'straight', length: 70 },
+        ],
+      },
+      settings,
+    );
+    expect(res.bar!.steps[1]).toMatchObject({ direction: 'down', radius: settings.radius });
+    expect(res.bar!.steps[3]).toMatchObject({ angle: 0 });
+    expect(res.changes.some((c) => c.includes('na kant'))).toBe(true);
+    expect(analyze(res.bar!, settings).issues.some((i) => i.code === 'bend-angle')).toBe(true);
+  });
+
+  it('converts numeric strings instead of concatenating them', () => {
+    const raw = {
+      ...base(),
+      section: { width: '40', thickness: '10', material: 'Cu' },
+      steps: [{ kind: 'straight', length: '332' }],
+    };
+    const res = sanitizeBusbar(raw, settings);
+    expect(res.bar!.section).toEqual({ width: 40, thickness: 10, material: 'Cu' });
+    expect(analyze(res.bar!, settings).flatLength).toBe(332);
+  });
+
+  it('rejects files without a usable section or steps', () => {
+    expect(sanitizeBusbar({ ...base(), section: { width: null } }, settings).bar).toBeNull();
+    expect(sanitizeBusbar({ ...base(), section: { width: 40, thickness: -1 } }, settings).bar).toBeNull();
+    expect(sanitizeBusbar({ ...base(), steps: 'x' }, settings).bar).toBeNull();
+    expect(sanitizeBusbar({ ...base(), steps: [] }, settings).bar).toBeNull();
+    expect(sanitizeBusbar(null, settings).bar).toBeNull();
+    expect(sanitizeBusbar('abc', settings).error).toBeTruthy();
+  });
+
+  it('defaults a missing dimension mode to outside and reports it', () => {
+    const raw = base();
+    delete raw.dimensionMode;
+    const res = sanitizeBusbar(raw, settings);
+    expect(res.bar!.dimensionMode).toBe('outside');
+    expect(res.changes).toHaveLength(1);
+  });
+
+  it('drops invalid holes and sanitizes the double-bar config', () => {
+    const res = sanitizeBusbar(
+      {
+        ...base(),
+        double: { enabled: true, side: 'sideways', gap: 'x' },
+        steps: [
+          {
+            kind: 'straight',
+            length: 100,
+            holes: [
+              { position: 'a', diameter: 13 },
+              { position: 50, diameter: 13 },
+            ],
+          },
+        ],
+      },
+      settings,
+    );
+    expect((res.bar!.steps[0] as StraightStep).holes).toHaveLength(1);
+    expect(res.bar!.double).toEqual({ enabled: true, side: 'above', gap: 0 });
+    expect(res.changes).toHaveLength(1);
+  });
+
+  it('a valid current project passes without changes', () => {
+    const bar = newBusbar(S40x10, [
+      straight(100, [{ position: 50, offset: 0, diameter: 13, slot: 0 }]),
+      bend(90, 'up', 10),
+      straight(80),
+    ]);
+    const res = sanitizeBusbar(JSON.parse(JSON.stringify(bar)), settings);
+    expect(res.changes).toEqual([]);
+    expect(res.bar).toEqual(bar);
   });
 });
 
@@ -180,5 +259,90 @@ describe('double bar', () => {
       p1.analysis.holes.forEach((h, k) => expect(p2.analysis.holes[k].posOnStraight).toBeCloseTo(h.posOnStraight, 6));
       expect(asm.issues.filter((i) => i.level === 'error')).toHaveLength(0);
     }
+  });
+});
+
+describe('editing steps', () => {
+  const h = (position: number) => ({ position, offset: 0, diameter: 13, slot: 0 });
+
+  it('removing a bend merges the legs and keeps hole positions on the bar', () => {
+    const steps = [straight(100, [h(30)]), bend(90, 'up', 10), straight(150, [h(60)])];
+    const out = removeStep(steps, 1);
+    expect(out).toHaveLength(1);
+    const leg = out[0] as StraightStep;
+    expect(leg.length).toBe(250);
+    expect(leg.holes!.map((x) => x.position)).toEqual([30, 160]);
+  });
+
+  it('removing a leg removes the bend before it (or after it for the first leg)', () => {
+    const steps = [straight(100), bend(90, 'up', 10), straight(150), bend(45, 'down', 10), straight(80)];
+    expect(removeStep(steps, 4).map((s) => s.kind)).toEqual(['straight', 'bend', 'straight']);
+    expect((removeStep(steps, 4)[1] as { angle: number }).angle).toBe(90);
+    expect(removeStep(steps, 0).map((s) => s.kind)).toEqual(['straight', 'bend', 'straight']);
+    expect((removeStep(steps, 0)[1] as { angle: number }).angle).toBe(45);
+  });
+
+  it('the last leg cannot be removed', () => {
+    const steps = [straight(100)];
+    expect(removeStep(steps, 0)).toBe(steps);
+  });
+});
+
+describe('bend line reference and dimension modes', () => {
+  const bar = newBusbar(S40x10, [straight(100), bend(90, 'up', 10), straight(100)]);
+  const ba = bendAllowance(90, 10, 0.4, 10);
+
+  it('start / centre / end of the bend zone', () => {
+    expect(analyze(bar, { ...settings, bendLineReference: 'start' }).bends[0].position).toBeCloseTo(80, 6);
+    expect(analyze(bar, { ...settings, bendLineReference: 'center' }).bends[0].position).toBeCloseTo(80 + ba / 2, 6);
+    expect(analyze(bar, { ...settings, bendLineReference: 'end' }).bends[0].position).toBeCloseTo(80 + ba, 6);
+  });
+
+  it('hole on the second leg in inside and centerline modes', () => {
+    for (const [mode, sb] of [
+      ['inside', 10],
+      ['centerline', 15],
+    ] as const) {
+      const b = {
+        ...newBusbar(S40x10, [
+          straight(100),
+          bend(90, 'up', 10),
+          straight(100, [{ position: 50, offset: 0, diameter: 13, slot: 0 }]),
+        ]),
+        dimensionMode: mode,
+      };
+      const an = analyze(b, settings);
+      expect(an.holes[0].posOnStraight).toBeCloseTo(50 - sb, 6);
+      expect(an.holes[0].flatPos).toBeCloseTo(100 - sb + ba + (50 - sb), 6);
+    }
+  });
+});
+
+describe('hole checks', () => {
+  const leg = (...holes: { position: number; offset?: number; diameter?: number; slot?: number }[]) =>
+    newBusbar(S40x10, [
+      straight(
+        200,
+        holes.map((x) => ({ offset: 0, diameter: 13, slot: 0, ...x })),
+      ),
+    ]);
+  const codes = (b: ReturnType<typeof leg>) => analyze(b, settings).issues.map((i) => `${i.level}:${i.code}`);
+
+  it('overlapping holes are an error, thin bridge a warning, enough material is fine', () => {
+    expect(codes(leg({ position: 50 }, { position: 55 }))).toContain('error:hole-overlap');
+    expect(codes(leg({ position: 50 }, { position: 66 }))).toContain('warning:hole-bridge'); // 3 mm between
+    expect(codes(leg({ position: 50 }, { position: 80 }))).toEqual([]);
+  });
+
+  it('slots are treated as capsules', () => {
+    // slot 13×40 centred at 60 spans 40..80; a Ø13 hole at 90 leaves 3.5 mm
+    expect(codes(leg({ position: 60, slot: 40 }, { position: 90 }))).toContain('warning:hole-bridge');
+    expect(codes(leg({ position: 60, slot: 40 }, { position: 84 }))).toContain('error:hole-overlap');
+  });
+
+  it('too little material to the bar end or side is a warning', () => {
+    expect(codes(leg({ position: 7 }))).toContain('warning:hole-edge'); // 0.5 mm to end A
+    expect(codes(leg({ position: 100, offset: 13 }))).toContain('warning:hole-edge'); // 0.5 mm to the side
+    expect(codes(leg({ position: 100, offset: 14 }))).toContain('error:hole-width');
   });
 });
