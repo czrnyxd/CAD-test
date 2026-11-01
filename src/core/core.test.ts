@@ -225,40 +225,109 @@ describe('holes', () => {
   });
 });
 
-describe('double bar', () => {
-  const L = (side: 'above' | 'below', gap = 0) => ({
-    ...newBusbar(S40x10, [
+describe('double bar (both bars bent separately with the same tool)', () => {
+  type Part = ReturnType<typeof buildAssembly>['parts'][number];
+  const holeWorld = (part: Part, k: number) => {
+    const h = part.analysis.holes[k];
+    const f = part.path.samples[part.path.stepRanges[h.stepIndex][0]];
+    return f.p
+      .clone()
+      .addScaledVector(f.t, h.posOnStraight)
+      .addScaledVector(f.w, h.offset)
+      .add(new Vector3(0, part.offset, 0));
+  };
+  /** Distance of a point from the centre line of a part (min over densely sampled segments). */
+  const distToCentreline = (part: Part, p: Vector3) => {
+    let best = Infinity;
+    const s = part.path.samples;
+    const off = new Vector3(0, part.offset, 0);
+    for (let k = 1; k < s.length; k++) {
+      const a = s[k - 1].p.clone().add(off);
+      const b = s[k].p.clone().add(off);
+      const ab = b.clone().sub(a);
+      const t = Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / Math.max(ab.lengthSq(), 1e-9)));
+      best = Math.min(best, a.addScaledVector(ab, t).distanceTo(p));
+    }
+    return best;
+  };
+
+  const shapes = {
+    L: () => [
       straight(200, [{ position: 50, offset: 0, diameter: 13, slot: 0 }]),
       bend(90, 'up', 10),
       straight(150, [{ position: 100, offset: 0, diameter: 13, slot: 0 }]),
-    ]),
+    ],
+    Z: () => [
+      straight(150, [{ position: 40, offset: 5, diameter: 13, slot: 0 }]),
+      bend(45, 'up', 10),
+      straight(120, [{ position: 60, offset: 0, diameter: 11, slot: 20 }]),
+      bend(90, 'down', 10),
+      straight(160, [{ position: 90, offset: -8, diameter: 13, slot: 0 }]),
+    ],
+  };
+  const make = (
+    shape: keyof typeof shapes,
+    side: 'above' | 'below',
+    gap: number,
+    mode: 'outside' | 'inside' | 'centerline' = 'outside',
+  ) => ({
+    ...newBusbar(S40x10, shapes[shape]()),
+    dimensionMode: mode,
     double: { enabled: true, side, gap },
   });
 
-  it('inner bar gets tool radius, outer R + T + gap', () => {
-    const asm = buildAssembly(L('above', 2), settings);
-    const [p1, p2] = asm.parts;
-    expect((p1.bar.steps[1] as { radius: number }).radius).toBeCloseTo(22, 6); // bar 1 is outer
-    expect((p2.bar.steps[1] as { radius: number }).radius).toBeCloseTo(10, 6); // bar 2 inside the bend
-    expect(p2.analysis.flatLength).toBeLessThan(p1.analysis.flatLength);
+  it('both bars use the tool radius in every bend', () => {
+    const [p1, p2] = buildAssembly(make('Z', 'above', 2), settings).parts;
+    for (const p of [p1, p2]) for (const s of p.bar.steps) if (s.kind === 'bend') expect(s.radius).toBe(10);
   });
 
-  it('bars stay parallel at distance T + gap and holes line up', () => {
-    for (const side of ['above', 'below'] as const) {
-      const gap = 3;
-      const asm = buildAssembly(L(side, gap), settings);
-      const [p1, p2] = asm.parts;
-      const e1 = p1.path.samples[p1.path.samples.length - 1];
-      const e2 = p2.path.samples[p2.path.samples.length - 1];
-      const end2 = e2.p.clone().add(new Vector3(0, p2.offset, 0));
-      const diff = end2.sub(e1.p);
-      // end points differ only along the local thickness normal by ±(T + gap)
-      expect(Math.abs(diff.dot(e1.n))).toBeCloseTo(10 + gap, 6);
-      expect(diff.dot(e1.t)).toBeCloseTo(0, 6);
-      // holes are at the same place on the straight parts
-      p1.analysis.holes.forEach((h, k) => expect(p2.analysis.holes[k].posOnStraight).toBeCloseTo(h.posOnStraight, 6));
-      expect(asm.issues.filter((i) => i.level === 'error')).toHaveLength(0);
-    }
+  it('inner bar legs are d·tan(A/2) shorter per bend, outer longer', () => {
+    const [p1, p2] = buildAssembly(make('L', 'above', 0), settings).parts; // bar 2 inside the 90° bend
+    expect((p2.bar.steps[0] as StraightStep).length).toBeCloseTo(200 - 10, 6);
+    expect((p2.bar.steps[2] as StraightStep).length).toBeCloseTo(150 - 10, 6);
+    expect(p2.analysis.flatLength).toBeLessThan(p1.analysis.flatLength);
+    const [, q2] = buildAssembly(make('L', 'below', 0), settings).parts; // bar 2 outside
+    expect((q2.bar.steps[0] as StraightStep).length).toBeCloseTo(210, 6);
+  });
+
+  for (const shape of ['L', 'Z'] as const)
+    for (const side of ['above', 'below'] as const)
+      for (const gap of [0, 3])
+        for (const mode of ['outside', 'inside', 'centerline'] as const)
+          it(`${shape}, bar 2 ${side}, gap ${gap}, ${mode}: legs parallel at T+gap, holes coaxial, no overlap`, () => {
+            const asm = buildAssembly(make(shape, side, gap, mode), settings);
+            const [p1, p2] = asm.parts;
+            const d = 10 + gap;
+            // straight legs: bar 2's leg lies on the line of bar 1's leg shifted by d along its normal
+            p2.bar.steps.forEach((st, i) => {
+              if (st.kind !== 'straight') return;
+              const f1 = p1.path.samples[p1.path.stepRanges[i][0]];
+              for (const k of p2.path.stepRanges[i]) {
+                const v = p2.path.samples[k].p
+                  .clone()
+                  .add(new Vector3(0, p2.offset, 0))
+                  .sub(f1.p);
+                expect(Math.abs(v.dot(f1.n))).toBeCloseTo(d, 4);
+                expect(v.dot(f1.w)).toBeCloseTo(0, 6);
+              }
+            });
+            // holes: the line between matching hole centres is along the thickness normal, length d
+            p1.analysis.holes.forEach((_, k) => {
+              const a = holeWorld(p1, k);
+              const b = holeWorld(p2, k);
+              expect(a.distanceTo(b)).toBeCloseTo(d, 4);
+            });
+            // nowhere closer than d (bars never overlap, arcs only open a gap)
+            for (const sm of p2.path.samples) {
+              const pt = sm.p.clone().add(new Vector3(0, p2.offset, 0));
+              expect(distToCentreline(p1, pt)).toBeGreaterThan(d - 1e-6);
+            }
+            expect(asm.issues.filter((x) => x.level === 'error')).toHaveLength(0);
+          });
+
+  it('reports the arc gap', () => {
+    const asm = buildAssembly(make('L', 'above', 0), settings);
+    expect(asm.arcGaps[0].gap).toBeCloseTo(10 * Math.SQRT2 - 10, 6);
   });
 });
 

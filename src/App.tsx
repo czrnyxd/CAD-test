@@ -170,9 +170,7 @@ export default function App() {
             )}
             {double && (
               <div className="card double-note">
-                <b>Podwójna szyna.</b> Każdą szynę tnij i gnij według jej własnej tabeli. W gięciach szyna wewnętrzna ma promień
-                narzędzia, a zewnętrzna większy o grubość i odstęp, dzięki czemu obie do siebie przylegają, a otwory wypadają na
-                sobie.
+                <b>Podwójna szyna.</b> {doubleNote(assembly)}
               </div>
             )}
             {assembly.parts.map((part) => (
@@ -565,6 +563,17 @@ function ProjectsModal({
   );
 }
 
+/** Instructions for a double bar: separate bending with the same tool, gap in the arcs. */
+function doubleNote(assembly: Assembly): string {
+  const worst = assembly.arcGaps.reduce<{ no: number; gap: number } | null>((m, g) => (!m || g.gap > m.gap ? g : m), null);
+  const gapText = worst ? ` W łukach szyny nie przylegają – największa szczelina ${fmt(worst.gap)} mm (gięcie ${worst.no}).` : '';
+  return (
+    'Każdą szynę tnij i gnij osobno według jej własnej tabeli, tym samym narzędziem. Na prostych odcinkach szyny ' +
+    'przylegają (lub mają zadany odstęp), a otwory wypadają na sobie.' +
+    gapText
+  );
+}
+
 function PartDocs({ part, double, settings }: { part: BarPart; double: boolean; settings: MachineSettings }) {
   const { bar, analysis } = part;
   return (
@@ -679,12 +688,7 @@ function PrintSheet({
           <div>
             Wymiary ramion: <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b> · K {settings.k} · koniec A oznaczony na zielono
           </div>
-          {double && (
-            <div>
-              Podwójna szyna: każdą szynę tnij i gnij według jej tabeli. Szyna wewnętrzna w gięciu ma promień narzędzia,
-              zewnętrzna większy o grubość i odstęp.
-            </div>
-          )}
+          {double && <div>Podwójna szyna: {doubleNote(assembly)}</div>}
           {issues.length > 0 && (
             <div className="print-issues">
               {issues.map((i, k) => (
