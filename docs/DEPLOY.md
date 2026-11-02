@@ -10,6 +10,53 @@ tablet ──HTTPS──► reverse proxy (443) ──► 127.0.0.1:8090 ──�
                                                               └─ /api – projekty w wolumenie /data
 ```
 
+## Twój VPS (Hetzner 2.31.1.120, obok Friendcorda) – najkrótsza droga
+
+Na serwerze działa już Caddy z Friendcorda (porty 80/443, kontenery w sieci hosta). BusBar CAD
+dostaje własny folder `/opt/busbar-cad`, własny projekt Compose `busbar-cad` i port
+`127.0.0.1:8090`, więc **nie dotyka Friendcorda** (API 3000, LiveKit 7880/7881). W zaporze nic
+nie trzeba otwierać. Domena nie jest potrzebna: adres `https://cad.2-31-1-120.sslip.io`
+działa tak samo jak `chat.2-31-1-120.sslip.io`.
+
+**1. Wdrożenie z PC** (z folderu tego repozytorium, ten sam klucz SSH co do Friendcorda):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\deploy-vps.ps1 -Ip 2.31.1.120
+```
+
+Na końcu skrypt wypisze **kod dostępu dla tabletów** – zapisz go. Kolejne wdrożenia tą samą
+komendą: kod i projekty zostają. Cofnięcie: `deploy\rollback-vps.ps1 -Ip 2.31.1.120`.
+
+**2. Adres w Caddy – raz, w repozytorium Friendcorda.** Konfiguracja Caddy pochodzi z
+`friendcord\deploy` i wgrywa ją `setup-vps.ps1`, więc wpis dodany tylko na serwerze zniknąłby
+przy następnym wdrożeniu Friendcorda. Dodaj do Caddyfile Friendcorda blok:
+
+```
+cad.2-31-1-120.sslip.io {
+    encode gzip
+    reverse_proxy 127.0.0.1:8090
+}
+```
+
+i przeładuj Caddy (wdrożenie Friendcorda przebudowuje tylko API, więc Caddy może wymagać
+osobnego przeładowania). Najprościej poprosić Claude w sesji w folderze `friendcord`:
+
+> Dodaj do konfiguracji Caddy w `deploy/` osobny blok strony `cad.2-31-1-120.sslip.io` z
+> `reverse_proxy 127.0.0.1:8090` (inna aplikacja – BusBar CAD – na tym samym VPS). Nie zmieniaj
+> istniejących bloków Friendcorda ani APP_HOSTS/LK_HOSTS. Upewnij się, że po `setup-vps.ps1`
+> Caddy przeładowuje konfigurację (np. `docker compose exec caddy caddy reload --config …`) bez
+> restartu LiveKit i API, i podaj mi komendę do jednorazowego przeładowania teraz.
+
+**3. Tablety:** otwórz `https://cad.2-31-1-120.sslip.io` → **Ustawienia → Serwer** → wpisz kod
+dostępu → **Połącz** → „Dodaj do ekranu głównego”.
+
+**Kopie zapasowe** projektów (na serwerze): `docker cp busbar-cad:/data /root/busbar-backup-$(date +%F)`
+– szczegóły i cron niżej. Logi: `cd /opt/busbar-cad/src && docker compose -p busbar-cad logs --tail=100`.
+
+---
+
+Poniżej opis ogólny (inny serwer, nginx, bez skryptu PowerShell).
+
 ## 1. DNS
 
 U dostawcy domeny dodaj rekord **A** dla subdomeny, np. `cad.twojadomena.pl`, wskazujący na IP VPS.
@@ -36,7 +83,7 @@ cd ~/busbar-cad
 cp .env.example .env
 sed -i "s/^API_TOKEN=.*/API_TOKEN=$(openssl rand -hex 12)/" .env
 cat .env                      # zapisz kod – wpiszesz go na tabletach
-docker compose up -d --build
+docker compose -p busbar-cad up -d --build
 curl -s http://127.0.0.1:8090/api/health   # → {"ok":true,"app":"busbar-cad"}
 ```
 
@@ -86,7 +133,7 @@ Na pasku stanu widać „☁ Zapisano na serwerze 12:03”. Bez internetu aplika
 ## Aktualizacja
 
 ```bash
-cd ~/busbar-cad && git pull && docker compose up -d --build
+cd ~/busbar-cad && git pull && docker compose -p busbar-cad up -d --build
 ```
 
 Dane są w wolumenie Dockera i przetrwają aktualizację.

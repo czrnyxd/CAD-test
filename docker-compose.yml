@@ -1,5 +1,5 @@
-# Start:   docker compose up -d --build
-# Update:  git pull && docker compose up -d --build
+# Start:   docker compose -p busbar-cad up -d --build   (or deploy/deploy-vps.ps1 from the PC)
+# Update:  the same command after updating the code
 services:
   busbar-cad:
     build: .
