@@ -273,3 +273,45 @@ type MachineProfile = {
 5. Czy otwory są wykrawane przed gięciem (wtedy muszą być na rozwinięciu)?
 6. Jaki tablet / system i czy przy stanowisku jest drukarka?
 7. Czy projekty mają trafiać gdzieś dalej (serwer, ERP, inne stanowiska)?
+
+---
+
+## 9. Do zrobienia (backlog)
+
+### Pomiar: dokładniejsze zaznaczanie punktów
+
+Dziś punkt wybiera się tapnięciem z przyciąganiem do najbliższego punktu w promieniu 60 px, a
+przyciskiem „↻ Inny punkt” przełącza się między sąsiednimi punktami. Przy łukach i małych
+przekrojach punkty leżą gęsto, a palec (zwłaszcza w rękawicy) zasłania miejsce, w które celuje.
+
+**Lupa pod palcem przy przytrzymaniu**
+- Przytrzymanie palca na modelu w trybie „Zmierz” (ok. 300 ms bez ruchu) otwiera lupę:
+  okrągłe powiększenie (ok. 2,5–3×, średnica ok. 140 px) wyświetlane **nad palcem**, z boku
+  przy krawędzi ekranu, tak żeby palec nigdy go nie zasłaniał.
+- W lupie: krzyżyk w miejscu pod palcem, punkty przyciągania w powiększeniu i wyróżniony punkt,
+  który zostanie wybrany (pierścień + opis, np. „narożnik”, „środek otworu O1”, „punkt wymiaru”).
+- Przesuwanie palca przesuwa krzyżyk i na żywo zmienia wybrany punkt (bez obracania modelu).
+- Puszczenie palca zatwierdza punkt; zsunięcie poza widok albo drugi palec anuluje.
+- Zwykłe krótkie tapnięcie działa jak dziś (bez lupy), obrót modelu jednym palcem też – lupa
+  włącza się tylko po przytrzymaniu bez ruchu.
+- Technicznie: drugi render tej samej sceny do małego płótna (kamera ortogonalna o mniejszym
+  kadrze wokół punktu pod palcem) albo powiększony fragment głównego płótna; aktualizacja przy
+  ruchu palca (requestAnimationFrame), bez przebudowy sceny.
+
+**Lepszy wygląd kropek punktów (wierzchołków)**
+- Stały rozmiar na ekranie niezależnie od powiększenia modelu (dziś kule mają rozmiar w mm, więc
+  przy oddaleniu znikają, a przy zbliżeniu są ogromne) – np. sprite'y / `Points` z
+  `sizeAttenuation: false`, ok. 12–14 px.
+- Czytelny styl: pierścień (jasne wypełnienie, ciemny obrys + cienka biała obwódka), dobrze
+  widoczny na miedzi i na tle; zamiast półprzezroczystych niebieskich kul.
+- Rodzaj punktu rozpoznawalny po kształcie i kolorze, z małą legendą w pasku pomiaru:
+  narożnik (kwadrat), środek otworu (kółko z krzyżykiem), punkt wymiaru / ostry narożnik
+  (romb, pomarańczowy), środek końca (kółko).
+- Punkty po niewidocznej stronie bryły przygaszone (mniejsza nieprzezroczystość), żeby nie
+  mieszały się z punktami z przodu; wybrany i wskazany punkt wyraźnie większy.
+- Mniej punktów naraz: w pełnym widoku tylko punkty w pobliżu palca / kursora albo po
+  przybliżeniu, żeby przy długich szynach nie było „chmury kropek”.
+
+**Do sprawdzenia przy wdrożeniu:** test na prawdziwym tablecie w rękawicy (czas przytrzymania,
+wielkość lupy, położenie przy krawędziach ekranu), zachowanie przy dwóch palcach (zoom) i w trybie
+pionowym / na telefonie.
