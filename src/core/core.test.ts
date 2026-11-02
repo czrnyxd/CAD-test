@@ -4,7 +4,18 @@ import { bendAllowance, bendDeduction, setback } from './bending';
 import { buildAssembly } from './assembly';
 import { buildPath, collisionIssues, legDimensions } from './geometry';
 import { Vector3 } from 'three';
-import { DEFAULT_SETTINGS, bend, newBusbar, straight, type MachineSettings, type Section, type StraightStep } from './model';
+import {
+  DEFAULT_SETTINGS,
+  bend,
+  newBusbar,
+  sectionError,
+  sectionKey,
+  sectionList,
+  straight,
+  type MachineSettings,
+  type Section,
+  type StraightStep,
+} from './model';
 import { sanitizeBusbar } from './sanitize';
 import { removeStep } from './edit';
 
@@ -449,5 +460,34 @@ describe('leg dimension reference points', () => {
     expect(d1.to.x).toBeCloseTo(100, 6);
     expect(d1.to.y).toBeCloseTo(-5, 6);
     expect(d2.from.distanceTo(d1.to)).toBeCloseTo(0, 6);
+  });
+});
+
+describe('custom sections', () => {
+  it('validates width and thickness', () => {
+    expect(sectionError(63, 10)).toBeNull();
+    expect(sectionError(3, 1)).toMatch(/Szerokość/);
+    expect(sectionError(63, 0)).toMatch(/Grubość/);
+    expect(sectionError(20, 20)).toMatch(/mniejsza/);
+  });
+
+  it('merges standard, custom and current sections without duplicates, sorted', () => {
+    const custom = [
+      { width: 63, thickness: 10, material: 'Cu' as const },
+      { width: 40, thickness: 10, material: 'Cu' as const }, // already standard
+    ];
+    const list = sectionList(custom, { width: 75, thickness: 8, material: 'Cu' });
+    const keys = list.map(sectionKey);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toContain('63x10');
+    expect(keys).toContain('75x8');
+    expect(keys.indexOf('60x10')).toBeLessThan(keys.indexOf('63x10'));
+    expect(keys.indexOf('63x10')).toBeLessThan(keys.indexOf('75x8'));
+  });
+
+  it('a custom section works in the calculations', () => {
+    const bar = newBusbar({ width: 63, thickness: 8, material: 'Cu' }, [straight(200), bend(90, 'up', 8), straight(150)]);
+    const an = analyze(bar, settings);
+    expect(an.flatLength).toBeCloseTo(350 - bendDeduction(90, 8, 0.4, 8), 6);
   });
 });

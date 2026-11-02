@@ -1,11 +1,23 @@
 import { create } from 'zustand';
-import { DEFAULT_SETTINGS, SECTIONS, newBusbar, newId, type Busbar, type MachineSettings, type Step } from './core/model';
+import {
+  DEFAULT_SETTINGS,
+  SECTIONS,
+  newBusbar,
+  newId,
+  sectionError,
+  sectionKey,
+  type Busbar,
+  type MachineSettings,
+  type Section,
+  type Step,
+} from './core/model';
 import { sanitizeBusbar, sanitizeSettings } from './core/sanitize';
 import { TEMPLATES } from './core/templates';
 
 const LS_PROJECTS = 'busbar.projects.v1';
 const LS_SETTINGS = 'busbar.settings.v1';
 const LS_CURRENT = 'busbar.current.v1';
+const LS_SECTIONS = 'busbar.sections.v1';
 const HISTORY_LIMIT = 200;
 
 // Storage may be missing or throw (private mode, sandboxed frames, quota) – never let it break the app.
@@ -35,6 +47,15 @@ function loadJson(key: string): unknown {
 }
 
 const initialSettings = sanitizeSettings(loadJson(LS_SETTINGS), DEFAULT_SETTINGS);
+
+/** User-defined sections ("Inny przekrój"), kept for later projects. */
+const initialCustomSections: Section[] = (() => {
+  const raw = loadJson(LS_SECTIONS);
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((x) => ({ width: Number(x?.width), thickness: Number(x?.thickness), material: 'Cu' as const }))
+    .filter((x) => sectionError(x.width, x.thickness) === null);
+})();
 
 /** Projects kept in memory; storage is read once and written on every change. */
 const projects: Record<string, Busbar> = {};
@@ -101,6 +122,9 @@ export interface AppState {
   saveOk: boolean;
   /** Message for the user (e.g. corrections made when a project was read). */
   notice: string | null;
+  /** User-defined sections. */
+  customSections: Section[];
+  addCustomSection: (s: Section) => void;
   /** Apply a change to the busbar (recorded in undo history unless record = false). */
   update: (fn: (bar: Busbar) => Busbar, record?: boolean) => void;
   updateSteps: (fn: (steps: Step[]) => Step[]) => void;
@@ -127,6 +151,14 @@ export const useStore = create<AppState>((set, get) => ({
   selected: null,
   saveOk: true,
   notice: changesNotice(initChanges),
+  customSections: initialCustomSections,
+  addCustomSection: (sec) => {
+    const known = [...SECTIONS, ...get().customSections].some((x) => sectionKey(x) === sectionKey(sec));
+    if (known) return;
+    const customSections = [...get().customSections, { ...sec }];
+    lsSet(LS_SECTIONS, JSON.stringify(customSections));
+    set({ customSections });
+  },
   update: (fn, record = true) => {
     const prev = get().bar;
     const next = { ...fn(prev), updatedAt: new Date().toISOString() };

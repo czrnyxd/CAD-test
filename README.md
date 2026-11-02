@@ -47,6 +47,7 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
 - **Rozwinięcie:** widok na górną stronę szyny (↑ = gięcie w stronę patrzącego), wymiary łańcuchowe i od bazy, strefy gięć, otwory, tabela gięć dla operatora.
 - **Wydruk A4 / PDF:** nagłówek zlecenia, widok 3D, tabela gięć, rozwinięcie.
 - **Projekty:** autozapis w przeglądarce (localStorage, z ostrzeżeniem gdy zapis się nie uda), lista projektów, kopiowanie, eksport i import JSON, cofnij/ponów. Import sprawdza dane: odrzuca plik bez poprawnego przekroju lub odcinków, a każdą poprawkę (np. przy projekcie ze starszej wersji) pokazuje do sprawdzenia.
+- **Przekroje:** lista typowych przekrojów Cu oraz **„Inny przekrój…”** (na liście u góry i w oknie nowej szyny): szerokość 5–300 mm, grubość 1–50 mm (mniejsza od szerokości), podgląd przekroju w skali. Własne przekroje są zapamiętywane na liście.
 - **Ustawienia maszyny:** nazwa maszyny, promień narzędzia (z przyciskiem „ustaw we wszystkich gięciach projektu”), K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
 
 ## Struktura

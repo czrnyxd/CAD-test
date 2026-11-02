@@ -3,7 +3,8 @@ import { analyze, fmt, type Issue } from './core/analyze';
 import { buildAssembly, type Assembly, type BarPart } from './core/assembly';
 import {
   DIMENSION_MODE_LABEL,
-  SECTIONS,
+  sectionKey,
+  sectionList,
   newBusbar,
   sectionLabel,
   type Busbar,
@@ -15,6 +16,7 @@ import { TEMPLATES } from './core/templates';
 import { sanitizeBusbar } from './core/sanitize';
 import { deleteProject, duplicateBar, loadProjects, useStore } from './store';
 import { DimensionModeHelp } from './ui/DimensionModeHelp';
+import { SectionDialog } from './ui/SectionDialog';
 import { BendTable, FlatPatternSvg, HoleTable } from './ui/FlatPattern';
 import { NumPad, type NumPadRequest } from './ui/NumPad';
 import { renderSnapshot } from './ui/scene';
@@ -22,6 +24,9 @@ import { StepList } from './ui/StepList';
 import { Viewer3D } from './ui/Viewer3D';
 
 type Tab = 'model' | 'flat' | 'settings';
+
+/** Select value that opens the "Inny przekrój" dialog. */
+const CUSTOM = '__custom';
 
 /** Running inside an iframe (e.g. an embedded preview): printing and downloads are blocked there. */
 const IN_FRAME = (() => {
@@ -50,7 +55,18 @@ export default function App() {
     setSettings,
     open,
     setNotice,
+    customSections,
+    addCustomSection,
   } = useStore();
+  const [sectionDialog, setSectionDialog] = useState<{ initial: Section; onOk: (s: Section) => void } | null>(null);
+  const askCustomSection = (initial: Section, then: (s: Section) => void) =>
+    setSectionDialog({
+      initial,
+      onOk: (sec) => {
+        addCustomSection(sec);
+        then(sec);
+      },
+    });
   const [tab, setTab] = useState<Tab>('model');
   const [modal, setModal] = useState<Modal>(null);
   const [np, setNp] = useState<NumPadRequest | null>(null);
@@ -107,17 +123,22 @@ export default function App() {
         />
         <select
           className="section-select"
-          value={`${bar.section.width}x${bar.section.thickness}`}
+          value={sectionKey(bar.section)}
           onChange={(e) => {
-            const s = SECTIONS.find((x) => `${x.width}x${x.thickness}` === e.target.value)!;
-            update((b) => ({ ...b, section: { ...s } }));
+            if (e.target.value === CUSTOM) {
+              askCustomSection(bar.section, (sec) => update((b) => ({ ...b, section: sec })));
+              return;
+            }
+            const sec = sectionList(customSections, bar.section).find((x) => sectionKey(x) === e.target.value)!;
+            update((b) => ({ ...b, section: { ...sec } }));
           }}
         >
-          {SECTIONS.map((s) => (
-            <option key={`${s.width}x${s.thickness}`} value={`${s.width}x${s.thickness}`}>
-              {sectionLabel(s)}
+          {sectionList(customSections, bar.section).map((sec) => (
+            <option key={sectionKey(sec)} value={sectionKey(sec)}>
+              {sectionLabel(sec)}
             </option>
           ))}
+          <option value={CUSTOM}>Inny przekrój…</option>
         </select>
         <nav className="tabs">
           <button className={tab === 'model' ? 'on' : ''} onClick={() => setTab('model')}>
@@ -196,7 +217,6 @@ export default function App() {
         </span>
       </footer>
 
-      {np && <NumPad req={np} onClose={() => setNp(null)} />}
       {toast && (
         <div className="toast" onClick={() => setToast(null)}>
           {toast}
@@ -224,6 +244,8 @@ export default function App() {
       {modal === 'new' && (
         <NewModal
           current={bar.section}
+          sections={sectionList(customSections, bar.section)}
+          onCustom={askCustomSection}
           settings={settings}
           onClose={() => setModal(null)}
           onCreate={(b) => {
@@ -244,6 +266,19 @@ export default function App() {
           }}
         />
       )}
+
+      {sectionDialog && (
+        <SectionDialog
+          initial={sectionDialog.initial}
+          numpad={setNp}
+          onClose={() => setSectionDialog(null)}
+          onOk={(sec) => {
+            sectionDialog.onOk(sec);
+            setSectionDialog(null);
+          }}
+        />
+      )}
+      {np && <NumPad req={np} onClose={() => setNp(null)} />}
 
       <PrintSheet bar={bar} assembly={assembly} settings={settings} snapshot={snapshot} issues={issues} />
     </div>
@@ -398,31 +433,39 @@ function SettingsTab({
 
 function NewModal({
   current,
+  sections,
+  onCustom,
   settings,
   onClose,
   onCreate,
 }: {
   current: Section;
+  sections: Section[];
+  onCustom: (initial: Section, then: (s: Section) => void) => void;
   settings: MachineSettings;
   onClose: () => void;
   onCreate: (b: Busbar) => void;
 }) {
-  const [sec, setSec] = useState(`${current.width}x${current.thickness}`);
-  const section = SECTIONS.find((x) => `${x.width}x${x.thickness}` === sec)!;
+  const [section, setSection] = useState<Section>(current);
+  const list = sections.some((x) => sectionKey(x) === sectionKey(section)) ? sections : sectionList(sections, section);
   return (
     <div className="modal-backdrop" onPointerDown={onClose}>
       <div className="modal" onPointerDown={(e) => e.stopPropagation()}>
         <h2>Nowa szyna</h2>
         <div className="muted">1. Wybierz przekrój</div>
         <div className="section-grid">
-          {SECTIONS.map((s) => {
-            const k = `${s.width}x${s.thickness}`;
-            return (
-              <button key={k} className={k === sec ? 'on' : ''} onClick={() => setSec(k)}>
-                {s.width}×{s.thickness}
-              </button>
-            );
-          })}
+          {list.map((x) => (
+            <button
+              key={sectionKey(x)}
+              className={sectionKey(x) === sectionKey(section) ? 'on' : ''}
+              onClick={() => setSection(x)}
+            >
+              {x.width}×{x.thickness}
+            </button>
+          ))}
+          <button className="section-other" onClick={() => onCustom(section, setSection)}>
+            Inny…
+          </button>
         </div>
         <div className="muted">2. Wybierz kształt startowy</div>
         <div className="template-grid">

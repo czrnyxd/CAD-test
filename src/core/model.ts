@@ -109,6 +109,30 @@ export const SECTIONS: Section[] = [
   [120, 10],
 ].map(([w, t]) => ({ width: w, thickness: t, material: 'Cu' as const }));
 
+/** Limits for a user-defined section, mm. */
+export const SECTION_LIMITS = { width: [5, 300], thickness: [1, 50] } as const;
+
+export function sectionKey(s: { width: number; thickness: number }): string {
+  return `${s.width}x${s.thickness}`;
+}
+
+/** Why a user-defined section is not usable, or null when it is fine. */
+export function sectionError(width: number, thickness: number): string | null {
+  const [wMin, wMax] = SECTION_LIMITS.width;
+  const [tMin, tMax] = SECTION_LIMITS.thickness;
+  if (!(width >= wMin && width <= wMax)) return `Szerokość musi być w zakresie ${wMin}–${wMax} mm.`;
+  if (!(thickness >= tMin && thickness <= tMax)) return `Grubość musi być w zakresie ${tMin}–${tMax} mm.`;
+  if (thickness >= width) return 'Grubość musi być mniejsza od szerokości.';
+  return null;
+}
+
+/** Standard sections, the user's own ones and the current one (if missing), sorted, without duplicates. */
+export function sectionList(custom: Section[], current?: Section): Section[] {
+  const map = new Map<string, Section>();
+  for (const s of [...SECTIONS, ...custom, ...(current ? [current] : [])]) map.set(sectionKey(s), s);
+  return [...map.values()].sort((a, b) => a.width - b.width || a.thickness - b.thickness);
+}
+
 export function sectionLabel(s: Section): string {
   return `${s.material} ${s.width}×${s.thickness}`;
 }

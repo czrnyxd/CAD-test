@@ -1381,3 +1381,60 @@ button.danger {
     grid-template-columns: 1fr;
   }
 }
+
+/* Custom section */
+.numpad-backdrop {
+  z-index: 80;
+}
+.section-dialog {
+  width: min(620px, 94vw);
+}
+.section-dialog-body {
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: 14px;
+  align-items: center;
+}
+.section-dialog .fields {
+  grid-template-columns: 1fr;
+}
+.section-preview {
+  margin: 0;
+  background: #f7f9fb;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  text-align: center;
+}
+.section-preview svg {
+  width: 100%;
+  height: auto;
+}
+.section-preview figcaption {
+  font-weight: 800;
+  font-size: 20px;
+}
+.section-error {
+  color: var(--error);
+  font-weight: 600;
+}
+.section-other {
+  font-weight: 700;
+  color: var(--accent);
+  background: #f4f8ff;
+  border-color: #cfe0ff;
+}
+@media (max-width: 640px) {
+  .section-dialog-body {
+    grid-template-columns: 1fr;
+  }
+}
+.section-select {
+  width: 150px;
+  flex: none;
+}
+@media (max-width: 640px) {
+  .section-select {
+    width: 130px;
+  }
+}

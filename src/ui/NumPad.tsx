@@ -70,7 +70,7 @@ export function NumPad({ req, onClose }: { req: NumPadRequest; onClose: () => vo
 
   return (
     // Tapping beside the keypad does not close it (easy to do with gloves); only Cancel / OK / Esc do.
-    <div className="modal-backdrop">
+    <div className="modal-backdrop numpad-backdrop">
       <div className="numpad" onPointerDown={(e) => e.stopPropagation()}>
         <div className="numpad-title">{req.title}</div>
         <div className={`numpad-display ${valid ? '' : 'invalid'} ${fresh ? 'fresh' : ''}`}>
