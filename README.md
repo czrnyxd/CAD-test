@@ -35,13 +35,14 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
   - obrót jednym palcem, zoom i przesuwanie dwoma,
   - widoki ISO/Przód/Góra/Bok i automatyczne dopasowanie kadru,
   - tap na szynę zaznacza krok,
-  - etykiety wymiarów i oznaczenie końca **A**.
+  - linie wymiarowe ramion jak na rysunku technicznym: pomarańczowe punkty pokazują, skąd dokąd liczony jest wymiar (zależnie od trybu: zewnętrzny / wewnętrzny ostry narożnik albo oś), przerywane linie przedłużają ściany do ostrego narożnika,
+  - oznaczenie końca **A**.
 - **Pomiar:** punkt–punkt z przyciąganiem do narożników przekroju, wynik z ΔX/ΔY/ΔZ, gabaryty.
 - **Obliczenia:**
   - naddatek na gięcie (BA), setback i długość rozwinięcia,
   - pozycje linii gięć (początek, środek lub koniec łuku),
   - nastawa kąta z korektą sprężynowania,
-  - wymiarowanie po zewnętrznej, wewnętrznej lub po osi.
+  - wymiarowanie po zewnętrznej (domyślnie), wewnętrznej lub po osi; w Ustawieniach rysunek objaśniający wybrany tryb i długość cięcia projektu w każdym trybie.
 - **Walidacje:** za krótkie odcinki, minimalne ramię, minimalny promień, długość handlowa, kolizja szyny z samą sobą, otwory nachodzące na siebie lub z za cienkim mostkiem materiału (do krawędzi, końca, innego otworu). Projekt z błędami ma na rozwinięciu i wydruku oznaczenie „NIE DO PRODUKCJI”.
 - **Rozwinięcie:** widok na górną stronę szyny (↑ = gięcie w stronę patrzącego), wymiary łańcuchowe i od bazy, strefy gięć, otwory, tabela gięć dla operatora.
 - **Wydruk A4 / PDF:** nagłówek zlecenia, widok 3D, tabela gięć, rozwinięcie.

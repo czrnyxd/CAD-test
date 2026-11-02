@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { analyze } from './analyze';
 import { bendAllowance, bendDeduction, setback } from './bending';
 import { buildAssembly } from './assembly';
-import { buildPath, collisionIssues } from './geometry';
+import { buildPath, collisionIssues, legDimensions } from './geometry';
 import { Vector3 } from 'three';
 import { DEFAULT_SETTINGS, bend, newBusbar, straight, type MachineSettings, type Section, type StraightStep } from './model';
 import { sanitizeBusbar } from './sanitize';
@@ -413,5 +413,41 @@ describe('hole checks', () => {
     expect(codes(leg({ position: 7 }))).toContain('warning:hole-edge'); // 0.5 mm to end A
     expect(codes(leg({ position: 100, offset: 13 }))).toContain('warning:hole-edge'); // 0.5 mm to the side
     expect(codes(leg({ position: 100, offset: 14 }))).toContain('error:hole-width');
+  });
+});
+
+describe('leg dimension reference points', () => {
+  const shapes = [
+    [straight(200), bend(90, 'up', 10), straight(150)],
+    [straight(150), bend(45, 'up', 10), straight(80), bend(45, 'down', 10), straight(150)],
+    [straight(120), bend(30, 'down', 15), straight(60), bend(120, 'up', 10), straight(130)],
+    [straight(300)],
+  ];
+  for (const mode of ['outside', 'inside', 'centerline'] as const)
+    shapes.forEach((steps, k) =>
+      it(`shape ${k + 1}, ${mode}: measured distance equals the entered leg length`, () => {
+        const bar = {
+          ...newBusbar(
+            S40x10,
+            steps.map((s) => ({ ...s })),
+          ),
+          dimensionMode: mode,
+        };
+        const path = buildPath(bar, analyze(bar, settings));
+        const dims = legDimensions(bar, path);
+        const legs = bar.steps.filter((s) => s.kind === 'straight') as StraightStep[];
+        expect(dims).toHaveLength(legs.length);
+        dims.forEach((d, n) => expect(d.length).toBeCloseTo(legs[n].length, 6));
+      }),
+    );
+
+  it('outside reference of an L lies on the outer faces (bounding box corner)', () => {
+    const bar = newBusbar(S40x10, [straight(100), bend(90, 'up', 10), straight(150)]);
+    const path = buildPath(bar, analyze(bar, settings));
+    const [d1, d2] = legDimensions(bar, path);
+    // the virtual sharp of the outer faces is the outer corner of the bounding box: x = 100, y = −T/2
+    expect(d1.to.x).toBeCloseTo(100, 6);
+    expect(d1.to.y).toBeCloseTo(-5, 6);
+    expect(d2.from.distanceTo(d1.to)).toBeCloseTo(0, 6);
   });
 });

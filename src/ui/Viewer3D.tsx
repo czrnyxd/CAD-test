@@ -4,8 +4,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { fmt } from '../core/analyze';
 import type { Assembly } from '../core/assembly';
-import { dirVector, keyPoints } from '../core/geometry';
-import { DIRECTION_ARROW, type Busbar } from '../core/model';
+import { dirVector, keyPoints, legDimensions } from '../core/geometry';
+import { DIMENSION_MODE_LABEL, DIRECTION_ARROW, type Busbar } from '../core/model';
+import { addLegDimension } from './dimensions3d';
 import { addLights, buildPartObjects, fitOrtho, type BarObject, type ViewName } from './scene';
 
 interface Props {
@@ -178,25 +179,27 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Prop
     // Overlay: dimension labels and the direction arrow of the selected bend.
     disposeGroup(c.overlay);
     if (showDims) {
-      let legNo = 0;
+      // Leg dimensions drawn from / to the reference points of the dimension mode.
+      const spacing = Math.min(120, Math.max(22, bbox.getSize(new THREE.Vector3()).length() * 0.08));
+      for (const d of legDimensions(bar, path)) {
+        const s = bar.steps[d.stepIndex];
+        if (s.kind !== 'straight') continue;
+        const at = addLegDimension(c.overlay, d, { width: bar.section.width, spacing, highlight: d.stepIndex === selected });
+        const l = label(`${fmt(s.length)}`, d.stepIndex === selected ? 'lbl-sel' : 'lbl-dim');
+        l.position.copy(at);
+        c.overlay.add(l);
+      }
       bar.steps.forEach((s, i) => {
         const [a, b] = path.stepRanges[i];
-        const sa = path.samples[a];
-        const sb = path.samples[b];
-        if (s.kind === 'straight') {
-          legNo++;
-          const mid = sa.p.clone().lerp(sb.p, 0.5);
-          const l = label(`${fmt(s.length)}`, i === selected ? 'lbl-sel' : 'lbl-dim');
-          l.position.copy(mid);
-          c.overlay.add(l);
-        } else if (s.kind === 'bend') {
+        if (s.kind === 'bend') {
           const midS = path.samples[Math.round((a + b) / 2)];
           const info = analysis.bends.find((x) => x.stepIndex === i);
           const l = label(
             `G${info?.no ?? '?'} ${fmt(s.angle)}° ${DIRECTION_ARROW[s.direction]}`,
             i === selected ? 'lbl-sel' : 'lbl-bend',
           );
-          l.position.copy(midS.p);
+          // Outside the arc, so it does not cover the dimension reference points at the corner.
+          l.position.copy(midS.p).addScaledVector(dirVector(midS, s.direction), -(bar.section.thickness / 2 + spacing * 0.9));
           c.overlay.add(l);
         }
       });
@@ -375,7 +378,8 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Prop
         </button>
       </div>
       <div className="viewer-info">
-        Gabaryty: {fmt(size.x)} × {fmt(size.y)} × {fmt(size.z)} mm
+        Gabaryty: {fmt(size.x)} × {fmt(size.y)} × {fmt(size.z)} mm · wymiary ramion{' '}
+        <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b>
       </div>
       {measure && (
         <div className="measure-panel">

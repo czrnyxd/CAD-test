@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { fmt, type Issue } from './core/analyze';
+import { analyze, fmt, type Issue } from './core/analyze';
 import { buildAssembly, type Assembly, type BarPart } from './core/assembly';
 import {
   DIMENSION_MODE_LABEL,
@@ -14,6 +14,7 @@ import {
 import { TEMPLATES } from './core/templates';
 import { sanitizeBusbar } from './core/sanitize';
 import { deleteProject, duplicateBar, loadProjects, useStore } from './store';
+import { DimensionModeHelp } from './ui/DimensionModeHelp';
 import { BendTable, FlatPatternSvg, HoleTable } from './ui/FlatPattern';
 import { NumPad, type NumPadRequest } from './ui/NumPad';
 import { renderSnapshot } from './ui/scene';
@@ -262,6 +263,7 @@ function SettingsTab({
   setSettings: (s: Partial<MachineSettings>) => void;
   numpad: (r: NumPadRequest) => void;
 }) {
+  const cutLength = (m: DimensionMode) => analyze({ ...bar, dimensionMode: m }, settings).flatLength;
   const otherRadius = bar.steps.filter((st) => st.kind === 'bend' && st.radius !== settings.radius).length;
   const num = (key: keyof MachineSettings, title: string, unit: string, min: number, max: number) => (
     <button
@@ -309,19 +311,27 @@ function SettingsTab({
             <span className="field-value">{bar.quantity} szt.</span>
           </button>
         </div>
-        <div className="field-row">
-          <span className="field-label">Długości odcinków wymiarowane</span>
-          <div className="seg">
-            {(['outside', 'inside', 'centerline'] as DimensionMode[]).map((m) => (
-              <button
-                key={m}
-                className={bar.dimensionMode === m ? 'on' : ''}
-                onClick={() => update((b) => ({ ...b, dimensionMode: m }))}
-              >
-                {DIMENSION_MODE_LABEL[m]}
-              </button>
-            ))}
+        <div className="dim-mode">
+          <div className="dim-mode-controls">
+            <span className="field-label">Długości odcinków wymiarowane</span>
+            <div className="seg seg-vertical">
+              {(['outside', 'inside', 'centerline'] as DimensionMode[]).map((m) => (
+                <button
+                  key={m}
+                  className={bar.dimensionMode === m ? 'on' : ''}
+                  onClick={() => update((b) => ({ ...b, dimensionMode: m }))}
+                >
+                  <span>{DIMENSION_MODE_LABEL[m]}</span>
+                  <small>długość cięcia {fmt(cutLength(m))} mm</small>
+                </button>
+              ))}
+            </div>
+            <p className="muted">
+              Zmiana trybu nie zmienia wpisanych liczb – zmienia to, skąd dokąd są mierzone, więc zmienia się wygięta szyna i
+              długość cięcia (podana przy każdym przycisku dla tego projektu).
+            </p>
           </div>
+          <DimensionModeHelp mode={bar.dimensionMode} />
         </div>
       </div>
       <div className="card">

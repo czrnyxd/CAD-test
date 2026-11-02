@@ -156,3 +156,70 @@ export function collisionIssues(bar: Busbar, path: BarPath): Issue[] {
   }
   return [];
 }
+
+/**
+ * Where a leg dimension is measured from and to, in 3D, for the project's dimension mode.
+ * At a bend the reference point is the virtual sharp of the chosen surface (outside / inside face
+ * or centre line), i.e. the corner the faces would make without the bend radius. At a free end it
+ * is the end face. `from`/`to` lie in the bend plane through the bar axis (w = 0).
+ */
+export interface LegDimension {
+  stepIndex: number;
+  from: Vector3;
+  to: Vector3;
+  /** Leg direction (unit). */
+  dir: Vector3;
+  /** Unit vector in the bend plane, perpendicular to the leg, pointing away from the bends' centres. */
+  outward: Vector3;
+  /** Distance from `from` to `to` measured along the leg = the dimension. */
+  length: number;
+  /**
+   * Construction lines from the end of the real face (tangent point) to a virtual sharp, for each
+   * bend end of the leg — shows that the dimension goes to the corner the faces would make.
+   */
+  construction: [Vector3, Vector3][];
+}
+
+export function legDimensions(bar: Busbar, path: BarPath): LegDimension[] {
+  const T = bar.section.thickness;
+  const e = bar.dimensionMode === 'outside' ? -T / 2 : bar.dimensionMode === 'inside' ? T / 2 : 0;
+  const steps = bar.steps;
+
+  // Virtual sharp of every valid bend, and the offset of its reference surface (towards the centre = +).
+  const sharp = new Map<number, { v: Vector3; faceIn: Vector3; faceOut: Vector3 }>();
+  steps.forEach((s, j) => {
+    if (s.kind !== 'bend' || !(s.angle > 0 && s.angle < 180)) return;
+    const [a, b] = path.stepRanges[j];
+    const f0 = path.samples[a];
+    const f1 = path.samples[b];
+    const toCentre0 = dirVector(f0, s.direction);
+    const toCentre1 = dirVector(f1, s.direction);
+    const rc = s.radius + T / 2;
+    const off = toCentre0.clone().multiplyScalar(e);
+    const faceIn = f0.p.clone().add(off); // reference surface at the tangent point before the bend
+    const v = faceIn.clone().addScaledVector(f0.t, (rc - e) * Math.tan(deg2rad(s.angle) / 2));
+    const faceOut = f1.p.clone().addScaledVector(toCentre1, e); // ... and after the bend
+    sharp.set(j, { v, faceIn, faceOut });
+  });
+
+  const out: LegDimension[] = [];
+  steps.forEach((s, i) => {
+    if (s.kind !== 'straight') return;
+    const [a] = path.stepRanges[i];
+    const f = path.samples[a];
+    const prev = sharp.get(i - 1);
+    const next = sharp.get(i + 1);
+    const dir = f.t.clone();
+    // Free ends use the reference surface of the bend at the other end of the leg (in this leg's frame).
+    const adjBend = steps[i - 1]?.kind === 'bend' ? steps[i - 1] : steps[i + 1];
+    const endOffset = adjBend && adjBend.kind === 'bend' ? dirVector(f, adjBend.direction).multiplyScalar(e) : new Vector3();
+    const from = prev ? prev.v.clone() : f.p.clone().add(endOffset);
+    const to = next ? next.v.clone() : path.samples[path.stepRanges[i][1]].p.clone().add(endOffset);
+    const outward = adjBend && adjBend.kind === 'bend' ? dirVector(f, adjBend.direction).negate() : f.n.clone().negate();
+    const construction: [Vector3, Vector3][] = [];
+    if (prev) construction.push([prev.faceOut.clone(), prev.v.clone()]);
+    if (next) construction.push([next.faceIn.clone(), next.v.clone()]);
+    out.push({ stepIndex: i, from, to, dir, outward, length: to.clone().sub(from).dot(dir), construction });
+  });
+  return out;
+}
