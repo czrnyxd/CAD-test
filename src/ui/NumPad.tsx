@@ -14,6 +14,8 @@ export interface NumPadRequest {
   nextLabel?: string;
   /** Explanatory drawing above the keys. */
   figure?: 'bend-angle';
+  /** 'side': on landscape tablets dock the keypad to the right, so the 3D model stays visible. */
+  placement?: 'center' | 'side';
 }
 
 export function NumPad({ req, onClose }: { req: NumPadRequest; onClose: () => void }) {
@@ -77,7 +79,7 @@ export function NumPad({ req, onClose }: { req: NumPadRequest; onClose: () => vo
 
   return (
     // Tapping beside the keypad does not close it (easy to do with gloves); only Cancel / OK / Esc do.
-    <div className="modal-backdrop numpad-backdrop">
+    <div className={`modal-backdrop numpad-backdrop ${req.placement === 'side' ? 'side' : ''}`}>
       <div className="numpad" onPointerDown={(e) => e.stopPropagation()}>
         <div className="numpad-title">{req.title}</div>
         <div className={`numpad-display ${valid ? '' : 'invalid'} ${fresh ? 'fresh' : ''}`}>

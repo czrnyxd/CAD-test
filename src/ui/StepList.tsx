@@ -51,8 +51,10 @@ export function StepList({
   updateSteps,
   setDouble,
   onRemoved,
-  numpad,
+  numpad: openNumpad,
 }: Props) {
+  // Keypads opened from the step list dock to the side on landscape tablets (model stays visible).
+  const numpad = (r: NumPadRequest) => openNumpad({ ...r, placement: 'side' });
   const dbl = doubleConfig(bar);
   // Which bar is inside the arc in each bend ("up" turns towards the side above).
   const inner: number[] = [];

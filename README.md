@@ -28,7 +28,7 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
 
 ## Co działa
 
-- **Edytor kroków:** odcinki i gięcia płaskie (przez grubość szyny). Wartości wpisuje się na dużej klawiaturze numerycznej z szybkimi kątami i przyciskiem **„OK i dalej”** (przejście do następnego pola). Kąt to „o ile giąć” (odchylenie od prostej) – klawiatura pokazuje to na rysunku. Usunięcie kroku pokazuje komunikat z „Cofnij”; licznik błędów na dole przenosi do błędnego kroku. Kierunek gięcia wybiera się przyciskami ↑ w górę / ↓ w dół. Nowe gięcie wstawia się za zaznaczonym odcinkiem.
+- **Edytor kroków:** odcinki i gięcia płaskie (przez grubość szyny). Wartości wpisuje się na dużej klawiaturze numerycznej (na tablecie poziomo wysuwa się z prawej, więc model zostaje widoczny) z szybkimi kątami i przyciskiem **„OK i dalej”** (przejście do następnego pola). Kąt to „o ile giąć” (odchylenie od prostej) – klawiatura pokazuje to na rysunku. Usunięcie kroku pokazuje komunikat z „Cofnij”; licznik błędów na dole przenosi do błędnego kroku. Kierunek gięcia wybiera się przyciskami ↑ w górę / ↓ w dół. Nowe gięcie wstawia się za zaznaczonym odcinkiem.
 - **Otwory:** okrągłe i fasolki na odcinkach prostych. Pozycja wzdłuż odcinka (tak jak jego wymiar), średnica, długość fasolki i przesunięcie od osi. W modelu 3D otwory są przelotowe (ze ściankami, widać przez nie na wylot) i mają numery O1, O2… zgodne z tabelą. Na rozwinięciu są wymiary od końca A i osobna tabela otworów. Aplikacja ostrzega, gdy otwór jest w strefie gięcia, za blisko gięcia albo poza szerokością szyny.
 - **Podwójna szyna:** dwie szyny, które po wygięciu składa się razem (druga nad albo pod pierwszą, z opcjonalnym odstępem). Obie gnie się **osobno, tym samym narzędziem** (promień R w każdym gięciu). Aplikacja wylicza długości odcinków szyny 2 tak, żeby jej proste odcinki były równoległe do szyny 1 w odległości grubość + odstęp: w każdym gięciu odcinki szyny wewnętrznej są krótsze, a zewnętrznej dłuższe o d·tan(kąt/2). Otwory wypadają dokładnie na sobie. W łukach szyny nie przylegają, a aplikacja podaje największą szczelinę. Każda szyna ma własną długość cięcia, tabelę gięć i otworów oraz rysunek. Wymiary wpisuje się dla szyny 1.
 - **Model 3D:**
@@ -37,7 +37,7 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
   - tap na szynę zaznacza krok,
   - linie wymiarowe ramion jak na rysunku technicznym: pomarańczowe punkty pokazują, skąd dokąd liczony jest wymiar (zależnie od trybu: zewnętrzny / wewnętrzny ostry narożnik albo oś), przerywane linie przedłużają ściany do ostrego narożnika,
   - oznaczenie końca **A**.
-- **Pomiar:** punkt–punkt z przyciąganiem do narożników przekroju, wynik z ΔX/ΔY/ΔZ, gabaryty.
+- **Pomiar:** punkt–punkt z przyciąganiem do narożników, środków otworów, końców i **punktów wymiarów** (ostrych narożników – można zmierzyć dokładnie wpisany wymiar). Przy każdym punkcie opis, przycisk „↻ Inny punkt” przełącza na sąsiedni punkt bez ponownego celowania; wynik z ΔX/ΔY/ΔZ w pasku na dole widoku.
 - **Obliczenia:**
   - naddatek na gięcie (BA), setback i długość rozwinięcia,
   - pozycje linii gięć (początek, środek lub koniec łuku),
@@ -50,7 +50,7 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
   - tabela gięć dla operatora z kolumną **„Ułożenie szyny”**: szynę wkłada się końcem A do zderzaka, a przed gięciem w przeciwną stronę niż poprzednie obraca się ją („↻ obróć szynę”); na telefonie tabela jako karty.
 - **Wydruk A4 / PDF:** nagłówek zlecenia, rysunek gotowej szyny z wymiarami, widok 3D, rozwinięcie, tabela gięć i otworów (pojedyncza szyna na 1 stronie).
 - **Projekty:** autozapis w przeglądarce (localStorage, z ostrzeżeniem gdy zapis się nie uda), lista projektów, kopiowanie, eksport i import JSON, cofnij/ponów. Import sprawdza dane: odrzuca plik bez poprawnego przekroju lub odcinków, a każdą poprawkę (np. przy projekcie ze starszej wersji) pokazuje do sprawdzenia.
-- **Przekroje:** lista typowych przekrojów Cu oraz **„Inny przekrój…”** (na liście u góry i w oknie nowej szyny): szerokość 5–300 mm, grubość 1–50 mm (mniejsza od szerokości), podgląd przekroju w skali. Własne przekroje są zapamiętywane na liście.
+- **Przekroje:** lista typowych przekrojów Cu oraz **„Inny przekrój…”** (na liście u góry; w oknie nowej szyny pola rozwijają się w tym samym oknie): szerokość 5–300 mm, grubość 1–50 mm (mniejsza od szerokości), podgląd przekroju w skali. Własne przekroje są zapamiętywane na liście.
 - **Ustawienia maszyny:** nazwa maszyny, promień narzędzia (z przyciskiem „ustaw we wszystkich gięciach projektu”), K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
 
 ## Struktura

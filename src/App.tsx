@@ -3,6 +3,8 @@ import { analyze, fmt, plural, type Issue } from './core/analyze';
 import { buildAssembly, type Assembly, type BarPart } from './core/assembly';
 import {
   DIMENSION_MODE_LABEL,
+  SECTION_LIMITS,
+  sectionError,
   sectionKey,
   sectionList,
   newBusbar,
@@ -309,7 +311,8 @@ export default function App() {
         <NewModal
           current={bar.section}
           sections={sectionList(customSections, bar.section)}
-          onCustom={askCustomSection}
+          onAddCustom={addCustomSection}
+          numpad={openNumpad}
           settings={settings}
           onClose={() => setModal(null)}
           onCreate={(b) => {
@@ -498,20 +501,25 @@ function SettingsTab({
 function NewModal({
   current,
   sections,
-  onCustom,
+  onAddCustom,
+  numpad,
   settings,
   onClose,
   onCreate,
 }: {
   current: Section;
   sections: Section[];
-  onCustom: (initial: Section, then: (s: Section) => void) => void;
+  onAddCustom: (s: Section) => void;
+  numpad: (r: NumPadRequest) => void;
   settings: MachineSettings;
   onClose: () => void;
   onCreate: (b: Busbar) => void;
 }) {
   const [section, setSection] = useState<Section>(current);
   const [orderNo, setOrderNo] = useState('');
+  // "Inny przekrój" edited right here (no extra dialog).
+  const [custom, setCustom] = useState<{ width: number; thickness: number } | null>(null);
+  const customError = custom ? sectionError(custom.width, custom.thickness) : null;
   const list = sections.some((x) => sectionKey(x) === sectionKey(section)) ? sections : sectionList(sections, section);
   return (
     <div className="modal-backdrop" onPointerDown={onClose}>
@@ -532,10 +540,65 @@ function NewModal({
               {x.width}×{x.thickness}
             </button>
           ))}
-          <button className="section-other" onClick={() => onCustom(section, setSection)}>
+          <button
+            className={`section-other ${custom ? 'on' : ''}`}
+            onClick={() => setCustom(custom ? null : { width: section.width, thickness: section.thickness })}
+          >
             Inny…
           </button>
         </div>
+        {custom && (
+          <div className="custom-section">
+            <button
+              className="field"
+              onClick={() =>
+                numpad({
+                  title: 'Szerokość szyny',
+                  value: custom.width,
+                  unit: 'mm',
+                  min: SECTION_LIMITS.width[0],
+                  max: SECTION_LIMITS.width[1],
+                  quick: [63, 75, 90, 125, 150, 160, 200],
+                  onOk: (v) => setCustom((c) => (c ? { ...c, width: v } : c)),
+                })
+              }
+            >
+              <span className="field-label">Szerokość</span>
+              <span className="field-value">{fmt(custom.width)} mm</span>
+            </button>
+            <span className="custom-x">×</span>
+            <button
+              className="field"
+              onClick={() =>
+                numpad({
+                  title: 'Grubość szyny',
+                  value: custom.thickness,
+                  unit: 'mm',
+                  min: SECTION_LIMITS.thickness[0],
+                  max: SECTION_LIMITS.thickness[1],
+                  quick: [2, 3, 4, 5, 6, 8, 10, 12, 15, 20],
+                  onOk: (v) => setCustom((c) => (c ? { ...c, thickness: v } : c)),
+                })
+              }
+            >
+              <span className="field-label">Grubość</span>
+              <span className="field-value">{fmt(custom.thickness)} mm</span>
+            </button>
+            <button
+              className="btn-primary"
+              disabled={!!customError}
+              onClick={() => {
+                const sec: Section = { ...custom, material: 'Cu' };
+                onAddCustom(sec);
+                setSection(sec);
+                setCustom(null);
+              }}
+            >
+              Użyj Cu {fmt(custom.width)}×{fmt(custom.thickness)}
+            </button>
+            {customError && <div className="section-error">⛔ {customError}</div>}
+          </div>
+        )}
         <div className="muted">2. Wybierz kształt startowy</div>
         <div className="template-grid">
           {TEMPLATES.map((t) => (

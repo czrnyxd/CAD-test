@@ -32,6 +32,24 @@ interface Ctx {
   render: () => void;
 }
 
+/** A point the measuring tool snaps to, with a description shown to the user. */
+interface SnapPoint {
+  p: THREE.Vector3;
+  label: string;
+}
+
+/** Merge points closer than `eps` (step boundaries share their corners). */
+function dedupe(pts: SnapPoint[], eps = 0.5): SnapPoint[] {
+  const out: SnapPoint[] = [];
+  for (const q of pts) {
+    const same = out.find((o) => o.p.distanceTo(q.p) < eps);
+    if (!same) out.push(q);
+    // A corner that is also a dimension reference point is described as the latter.
+    else if (q.label.startsWith('punkt wymiaru')) same.label = q.label;
+  }
+  return out;
+}
+
 function label(text: string, cls: string): CSS2DObject {
   const el = document.createElement('div');
   el.className = `lbl ${cls}`;
@@ -57,12 +75,17 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
   const ctxRef = useRef<Ctx | null>(null);
   const [measure, setMeasure] = useState(false);
   const [showDims, setShowDims] = useState(true);
-  const [points, setPoints] = useState<THREE.Vector3[]>([]);
+  const [points, setPoints] = useState<SnapPoint[]>([]);
+  /** Snap candidates near the last tap, to switch the last point to a neighbouring one. */
+  const [cand, setCand] = useState<{ list: SnapPoint[]; idx: number } | null>(null);
   const fittedFor = useRef<string | null>(null);
-  const keyPts = useRef<THREE.Vector3[]>([]);
+  const keyPts = useRef<SnapPoint[]>([]);
 
   // A measurement belongs to the shape it was taken on – clear it when the bar changes.
-  useEffect(() => setPoints([]), [assembly]);
+  useEffect(() => {
+    setPoints([]);
+    setCand(null);
+  }, [assembly]);
 
   // Init renderer once.
   useEffect(() => {
@@ -166,16 +189,32 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     c.grid.position.y = bbox.min.y - 1;
     // Snap points for measuring: section corners and hole centres (both faces) of every bar.
     const { width: W, thickness: T } = bar.section;
-    keyPts.current = assembly.parts.flatMap((part) => {
-      const shift = new THREE.Vector3(0, part.offset, 0);
-      const pts = keyPoints(part.path, W, T);
-      for (const h of part.analysis.holes) {
-        const f = part.path.samples[part.path.stepRanges[h.stepIndex][0]];
-        const c0 = f.p.clone().addScaledVector(f.t, h.posOnStraight).addScaledVector(f.w, h.offset);
-        pts.push(c0.clone().addScaledVector(f.n, T / 2), c0.clone().addScaledVector(f.n, -T / 2));
-      }
-      return pts.map((p) => p.add(shift));
-    });
+    keyPts.current = dedupe(
+      assembly.parts.flatMap((part) => {
+        const shift = new THREE.Vector3(0, part.offset, 0);
+        const name = assembly.parts.length > 1 ? ` (szyna ${part.index})` : '';
+        const all = keyPoints(part.path, W, T);
+        const ends = all.slice(-2);
+        const pts: SnapPoint[] = all.slice(0, -2).map((p) => ({ p, label: `narożnik${name}` }));
+        ends.forEach((p, k) => pts.push({ p, label: `środek końca ${k === 0 ? 'A' : 'B'}${name}` }));
+        for (const h of part.analysis.holes) {
+          const f = part.path.samples[part.path.stepRanges[h.stepIndex][0]];
+          const c0 = f.p.clone().addScaledVector(f.t, h.posOnStraight).addScaledVector(f.w, h.offset);
+          for (const side of [1, -1])
+            pts.push({ p: c0.clone().addScaledVector(f.n, (side * T) / 2), label: `środek otworu O${h.no}${name}` });
+        }
+        // Reference points of the leg dimensions (sharp corners), on both side faces.
+        if (part.index === 1) {
+          for (const d of legDimensions(part.bar, part.path)) {
+            for (const z of [W / 2, -W / 2]) {
+              pts.push({ p: d.from.clone().add(new THREE.Vector3(0, 0, z)), label: 'punkt wymiaru (ostry narożnik)' });
+              pts.push({ p: d.to.clone().add(new THREE.Vector3(0, 0, z)), label: 'punkt wymiaru (ostry narożnik)' });
+            }
+          }
+        }
+        return pts.map((q) => ({ ...q, p: q.p.add(shift) }));
+      }),
+    );
 
     // Overlay: dimension labels and the direction arrow of the selected bend.
     disposeGroup(c.overlay);
@@ -288,10 +327,10 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
         new THREE.MeshBasicMaterial({ color: '#1677ff', transparent: true, opacity: 0.45, depthTest: false }),
         keyPts.current.length,
       );
-      keyPts.current.forEach((p, i) => kp.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p.x, p.y, p.z)));
+      keyPts.current.forEach(({ p }, i) => kp.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p.x, p.y, p.z)));
       kp.renderOrder = 10;
       c.measureGroup.add(kp);
-      for (const p of points) {
+      for (const { p } of points) {
         const m = new THREE.Mesh(
           new THREE.SphereGeometry(size * 1.6, 14, 10),
           new THREE.MeshBasicMaterial({ color: '#e8590c', depthTest: false }),
@@ -301,12 +340,12 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
         c.measureGroup.add(m);
       }
       if (points.length === 2) {
-        const g = new THREE.BufferGeometry().setFromPoints(points);
+        const g = new THREE.BufferGeometry().setFromPoints(points.map((q) => q.p));
         const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: '#e8590c', depthTest: false }));
         line.renderOrder = 11;
         c.measureGroup.add(line);
-        const l = label(`${fmt(points[0].distanceTo(points[1]))} mm`, 'lbl-measure');
-        l.position.copy(points[0]).lerp(points[1], 0.5);
+        const l = label(`${fmt(points[0].p.distanceTo(points[1].p))} mm`, 'lbl-measure');
+        l.position.copy(points[0].p).lerp(points[1].p, 0.5);
         c.measureGroup.add(l);
       }
     }
@@ -331,20 +370,21 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       if (measure) {
-        // Snap to the nearest key point on screen.
-        let best: THREE.Vector3 | null = null;
-        let bestD = 45;
-        for (const p of keyPts.current) {
-          const v = p.clone().project(c.camera);
-          const sx = ((v.x + 1) / 2) * rect.width;
-          const sy = ((1 - v.y) / 2) * rect.height;
-          const d = Math.hypot(sx - x, sy - y);
-          if (d < bestD) {
-            bestD = d;
-            best = p;
-          }
+        // Snap to the nearest key point on screen; remember the other ones nearby.
+        const near = keyPts.current
+          .map((q) => {
+            const v = q.p.clone().project(c.camera);
+            const sx = ((v.x + 1) / 2) * rect.width;
+            const sy = ((1 - v.y) / 2) * rect.height;
+            return { q, d: Math.hypot(sx - x, sy - y), depth: v.z };
+          })
+          .filter((o) => o.d < 60)
+          .sort((a, b) => a.d - b.d || a.depth - b.depth)
+          .map((o) => o.q);
+        if (near.length) {
+          setPoints((pts) => (pts.length >= 2 ? [near[0]] : [...pts, near[0]]));
+          setCand({ list: near, idx: 0 });
         }
-        if (best) setPoints((pts) => (pts.length >= 2 ? [best!] : [...pts, best!]));
         return;
       }
       const ray = new THREE.Raycaster();
@@ -367,10 +407,17 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
   }, [measure, onSelect]);
 
   const size = bbox.getSize(new THREE.Vector3());
-  const d = points.length === 2 ? points[1].clone().sub(points[0]) : null;
+  const d = points.length === 2 ? points[1].p.clone().sub(points[0].p) : null;
+  /** Switch the last placed point to the next candidate near the tap. */
+  const nextCandidate = () => {
+    if (!cand || cand.list.length < 2) return;
+    const idx = (cand.idx + 1) % cand.list.length;
+    setCand({ ...cand, idx });
+    setPoints((pts) => [...pts.slice(0, -1), cand.list[idx]]);
+  };
 
   return (
-    <div className="viewer">
+    <div className={`viewer ${measure ? 'measuring' : ''}`}>
       <div className="viewer-canvas" ref={hostRef} />
       <div className="viewer-toolbar">
         <button onClick={() => setView('iso')}>ISO</button>
@@ -389,6 +436,7 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
           onClick={() => {
             setMeasure((m) => !m);
             setPoints([]);
+            setCand(null);
           }}
         >
           📏 Zmierz
@@ -400,16 +448,39 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
       </div>
       {measure && (
         <div className="measure-panel">
-          {points.length === 0 && <div>Dotknij pierwszego punktu (narożnik / środek końca)</div>}
+          {points.length === 0 && <div>Dotknij pierwszego punktu (narożnik, środek końca, otwór, punkt wymiaru)</div>}
           {points.length === 1 && <div>Dotknij drugiego punktu</div>}
+          {points.length > 0 && (
+            <div className="measure-points">
+              {points.map((q, k) => (
+                <div key={k}>
+                  <b>{k + 1}.</b> {q.label}
+                </div>
+              ))}
+            </div>
+          )}
+          {cand && cand.list.length > 1 && points.length > 0 && (
+            <button className="measure-next" onClick={nextCandidate}>
+              ↻ Inny punkt ({cand.idx + 1}/{cand.list.length})
+            </button>
+          )}
           {d && (
             <>
               <div className="measure-big">{fmt(d.length())} mm</div>
               <div>
                 ΔX {fmt(Math.abs(d.x))} · ΔY {fmt(Math.abs(d.y))} · ΔZ {fmt(Math.abs(d.z))}
               </div>
-              <button onClick={() => setPoints([])}>Wyczyść</button>
             </>
+          )}
+          {points.length > 0 && (
+            <button
+              onClick={() => {
+                setPoints([]);
+                setCand(null);
+              }}
+            >
+              Wyczyść
+            </button>
           )}
         </div>
       )}
