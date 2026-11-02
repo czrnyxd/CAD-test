@@ -28,7 +28,7 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
 
 ## Co działa
 
-- **Edytor kroków:** odcinki i gięcia płaskie (przez grubość szyny). Wartości wpisuje się na dużej klawiaturze numerycznej z szybkimi kątami. Kierunek gięcia wybiera się przyciskami ↑ w górę / ↓ w dół. Nowe gięcie wstawia się za zaznaczonym odcinkiem.
+- **Edytor kroków:** odcinki i gięcia płaskie (przez grubość szyny). Wartości wpisuje się na dużej klawiaturze numerycznej z szybkimi kątami i przyciskiem **„OK i dalej”** (przejście do następnego pola). Kąt to „o ile giąć” (odchylenie od prostej) – klawiatura pokazuje to na rysunku. Usunięcie kroku pokazuje komunikat z „Cofnij”; licznik błędów na dole przenosi do błędnego kroku. Kierunek gięcia wybiera się przyciskami ↑ w górę / ↓ w dół. Nowe gięcie wstawia się za zaznaczonym odcinkiem.
 - **Otwory:** okrągłe i fasolki na odcinkach prostych. Pozycja wzdłuż odcinka (tak jak jego wymiar), średnica, długość fasolki i przesunięcie od osi. W modelu 3D otwory są przelotowe (ze ściankami, widać przez nie na wylot) i mają numery O1, O2… zgodne z tabelą. Na rozwinięciu są wymiary od końca A i osobna tabela otworów. Aplikacja ostrzega, gdy otwór jest w strefie gięcia, za blisko gięcia albo poza szerokością szyny.
 - **Podwójna szyna:** dwie szyny, które po wygięciu składa się razem (druga nad albo pod pierwszą, z opcjonalnym odstępem). Obie gnie się **osobno, tym samym narzędziem** (promień R w każdym gięciu). Aplikacja wylicza długości odcinków szyny 2 tak, żeby jej proste odcinki były równoległe do szyny 1 w odległości grubość + odstęp: w każdym gięciu odcinki szyny wewnętrznej są krótsze, a zewnętrznej dłuższe o d·tan(kąt/2). Otwory wypadają dokładnie na sobie. W łukach szyny nie przylegają, a aplikacja podaje największą szczelinę. Każda szyna ma własną długość cięcia, tabelę gięć i otworów oraz rysunek. Wymiary wpisuje się dla szyny 1.
 - **Model 3D:**
@@ -44,8 +44,11 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
   - nastawa kąta z korektą sprężynowania,
   - wymiarowanie po zewnętrznej (domyślnie), wewnętrznej lub po osi; w Ustawieniach rysunek objaśniający wybrany tryb i długość cięcia projektu w każdym trybie.
 - **Walidacje:** za krótkie odcinki, minimalne ramię, minimalny promień, długość handlowa, kolizja szyny z samą sobą, otwory nachodzące na siebie lub z za cienkim mostkiem materiału (do krawędzi, końca, innego otworu). Projekt z błędami ma na rozwinięciu i wydruku oznaczenie „NIE DO PRODUKCJI”.
-- **Rozwinięcie:** widok na górną stronę szyny (↑ = gięcie w stronę patrzącego), wymiary łańcuchowe i od bazy, strefy gięć, otwory, tabela gięć dla operatora.
-- **Wydruk A4 / PDF:** nagłówek zlecenia, widok 3D, tabela gięć, rozwinięcie.
+- **Rozwinięcie:**
+  - rysunek gotowej szyny (widok z przodu, w skali) z wymiarami ramion i kątami – do sprawdzenia po gięciu,
+  - rozwinięcie: widok na górną stronę szyny (↑ = gięcie w stronę patrzącego), wymiary łańcuchowe i od bazy, strefy gięć, otwory,
+  - tabela gięć dla operatora z kolumną **„Ułożenie szyny”**: szynę wkłada się końcem A do zderzaka, a przed gięciem w przeciwną stronę niż poprzednie obraca się ją („↻ obróć szynę”); na telefonie tabela jako karty.
+- **Wydruk A4 / PDF:** nagłówek zlecenia, rysunek gotowej szyny z wymiarami, widok 3D, rozwinięcie, tabela gięć i otworów (pojedyncza szyna na 1 stronie).
 - **Projekty:** autozapis w przeglądarce (localStorage, z ostrzeżeniem gdy zapis się nie uda), lista projektów, kopiowanie, eksport i import JSON, cofnij/ponów. Import sprawdza dane: odrzuca plik bez poprawnego przekroju lub odcinków, a każdą poprawkę (np. przy projekcie ze starszej wersji) pokazuje do sprawdzenia.
 - **Przekroje:** lista typowych przekrojów Cu oraz **„Inny przekrój…”** (na liście u góry i w oknie nowej szyny): szerokość 5–300 mm, grubość 1–50 mm (mniejsza od szerokości), podgląd przekroju w skali. Własne przekroje są zapamiętywane na liście.
 - **Ustawienia maszyny:** nazwa maszyny, promień narzędzia (z przyciskiem „ustaw we wszystkich gięciach projektu”), K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.

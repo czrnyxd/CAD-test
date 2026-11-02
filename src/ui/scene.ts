@@ -380,6 +380,36 @@ export function fitOrtho(
   target?.copy(center);
 }
 
+/**
+ * Shrink an orthographic camera's frustum to the projected bounding box (keeps the aspect ratio,
+ * adds a margin), so the whole part fills the picture without being cut off.
+ */
+export function fitTight(cam: THREE.OrthographicCamera, box: THREE.Box3, aspect: number, margin = 0.05) {
+  cam.updateMatrixWorld();
+  const inv = cam.matrixWorldInverse;
+  const lo = new THREE.Vector2(Infinity, Infinity);
+  const hi = new THREE.Vector2(-Infinity, -Infinity);
+  for (const x of [box.min.x, box.max.x])
+    for (const y of [box.min.y, box.max.y])
+      for (const z of [box.min.z, box.max.z]) {
+        const v = new THREE.Vector3(x, y, z).applyMatrix4(inv);
+        lo.min(new THREE.Vector2(v.x, v.y));
+        hi.max(new THREE.Vector2(v.x, v.y));
+      }
+  const cx = (lo.x + hi.x) / 2;
+  const cy = (lo.y + hi.y) / 2;
+  let w = (hi.x - lo.x) * (1 + 2 * margin);
+  let h = (hi.y - lo.y) * (1 + 2 * margin);
+  if (w / h > aspect) h = w / aspect;
+  else w = h * aspect;
+  cam.left = cx - w / 2;
+  cam.right = cx + w / 2;
+  cam.top = cy + h / 2;
+  cam.bottom = cy - h / 2;
+  cam.zoom = 1;
+  cam.updateProjectionMatrix();
+}
+
 /** Render an off-screen isometric picture of the bar (for the printout). */
 export function renderSnapshot(parts: BarPart[], bbox: THREE.Box3, width = 1200, height = 800): string {
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: false });
@@ -391,8 +421,7 @@ export function renderSnapshot(parts: BarPart[], bbox: THREE.Box3, width = 1200,
   objs.forEach((o) => scene.add(o.group));
   const cam = new THREE.OrthographicCamera();
   fitOrtho(cam, bbox, 'iso', width / height);
-  cam.zoom = 1.6;
-  cam.updateProjectionMatrix();
+  fitTight(cam, bbox, width / height, 0.06);
   renderer.render(scene, cam);
   const url = renderer.domElement.toDataURL('image/png');
   objs.forEach((o) => o.dispose());

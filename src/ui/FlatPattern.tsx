@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { fmt, type Analysis } from '../core/analyze';
+import { ORIENTATION_LABEL, bendOrientations, fmt, type Analysis } from '../core/analyze';
 import { DIRECTION_ARROW, DIRECTION_LABEL, type Busbar, type MachineSettings } from '../core/model';
 
 const REF_LABEL = { start: 'początek łuku', center: 'środek łuku', end: 'koniec łuku' } as const;
@@ -226,44 +226,82 @@ function Dim({
 
 export function BendTable({ analysis, settings }: { analysis: Analysis; settings: MachineSettings }) {
   if (!analysis.bends.length) return <p className="muted">Brak gięć – szyna prosta.</p>;
+  const orient = bendOrientations(analysis.bends);
+  const note = (
+    <>
+      Szynę wkładaj <b>końcem A do zderzaka</b>. Pozycja = {REF_LABEL[settings.bendLineReference]}, mierzona od końca A (zielony).
+      Przed gięciem w przeciwną stronę niż poprzednie – obróć szynę. Nastawa uwzględnia sprężynowanie.
+    </>
+  );
   return (
-    <table className="bend-table">
-      <thead>
-        <tr>
-          <th>Nr</th>
-          <th>Pozycja od A [mm]</th>
-          <th>Kierunek</th>
-          <th>Kąt</th>
-          <th>Nastawa maszyny</th>
-          <th>R [mm]</th>
-          <th>Strefa gięcia [mm]</th>
-        </tr>
-      </thead>
-      <tbody>
-        {analysis.bends.map((b) => (
-          <tr key={b.no}>
-            <td className="num-badge">{b.no}</td>
-            <td className="big">{fmt(b.position)}</td>
-            <td>
-              <span className="arrow">{DIRECTION_ARROW[b.direction]}</span> {DIRECTION_LABEL[b.direction]}
-            </td>
-            <td>{fmt(b.angle)}°</td>
-            <td className="big">{fmt(b.machineAngle)}°</td>
-            <td>{fmt(b.radius)}</td>
-            <td>
-              {fmt(b.arcStart)} – {fmt(b.arcEnd)}
+    <>
+      <table className="bend-table">
+        <thead>
+          <tr>
+            <th>Nr</th>
+            <th>Pozycja od A [mm]</th>
+            <th>Kierunek</th>
+            <th>Ułożenie szyny</th>
+            <th>Kąt</th>
+            <th>Nastawa maszyny</th>
+            <th>R [mm]</th>
+            <th>Strefa gięcia [mm]</th>
+          </tr>
+        </thead>
+        <tbody>
+          {analysis.bends.map((b, k) => (
+            <tr key={b.no}>
+              <td className="num-badge">{b.no}</td>
+              <td className="big">{fmt(b.position)}</td>
+              <td>
+                <span className="arrow">{DIRECTION_ARROW[b.direction]}</span> {DIRECTION_LABEL[b.direction]}
+              </td>
+              <td className={`orient orient-${orient[k]}`}>{ORIENTATION_LABEL[orient[k]]}</td>
+              <td>{fmt(b.angle)}°</td>
+              <td className="big">{fmt(b.machineAngle)}°</td>
+              <td>{fmt(b.radius)}</td>
+              <td>
+                {fmt(b.arcStart)} – {fmt(b.arcEnd)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colSpan={8} className="muted">
+              {note}
             </td>
           </tr>
+        </tfoot>
+      </table>
+      {/* Narrow screens: one card per bend instead of the wide table. */}
+      <div className="bend-cards">
+        {analysis.bends.map((b, k) => (
+          <div className="bend-card" key={b.no}>
+            <div className="bend-card-head">
+              <span className="num-badge">{b.no}</span>
+              <span className="bend-card-pos">{fmt(b.position)} mm</span>
+              <span className="arrow">{DIRECTION_ARROW[b.direction]}</span>
+            </div>
+            <div className="bend-card-row">
+              <span>Nastawa</span>
+              <b>{fmt(b.machineAngle)}°</b>
+            </div>
+            <div className="bend-card-row">
+              <span>Kąt / kierunek</span>
+              <span>
+                {fmt(b.angle)}° {DIRECTION_LABEL[b.direction]}
+              </span>
+            </div>
+            <div className={`bend-card-row orient-${orient[k]}`}>
+              <span>Ułożenie</span>
+              <span>{ORIENTATION_LABEL[orient[k]]}</span>
+            </div>
+          </div>
         ))}
-      </tbody>
-      <tfoot>
-        <tr>
-          <td colSpan={7} className="muted">
-            Pozycja = {REF_LABEL[settings.bendLineReference]}, mierzona od końca A (zielony). Nastawa uwzględnia sprężynowanie.
-          </td>
-        </tr>
-      </tfoot>
-    </table>
+        <p className="muted">{note}</p>
+      </div>
+    </>
   );
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyze } from './analyze';
+import { analyze, bendOrientations, plural } from './analyze';
 import { bendAllowance, bendDeduction, setback } from './bending';
 import { buildAssembly } from './assembly';
 import { buildPath, collisionIssues, legDimensions } from './geometry';
@@ -17,7 +17,7 @@ import {
   type StraightStep,
 } from './model';
 import { sanitizeBusbar } from './sanitize';
-import { removeStep } from './edit';
+import { freeHolePosition, removeStep } from './edit';
 
 const S40x10: Section = { width: 40, thickness: 10, material: 'Cu' };
 const settings: MachineSettings = { ...DEFAULT_SETTINGS, k: 0.4, radius: 10, minLeg: 0 };
@@ -489,5 +489,40 @@ describe('custom sections', () => {
     const bar = newBusbar({ width: 63, thickness: 8, material: 'Cu' }, [straight(200), bend(90, 'up', 8), straight(150)]);
     const an = analyze(bar, settings);
     expect(an.flatLength).toBeCloseTo(350 - bendDeduction(90, 8, 0.4, 8), 6);
+  });
+});
+
+describe('bar orientation in the machine', () => {
+  it('turn the bar over only when the direction changes', () => {
+    const o = bendOrientations([
+      { direction: 'up' },
+      { direction: 'up' },
+      { direction: 'down' },
+      { direction: 'down' },
+      { direction: 'up' },
+    ]);
+    expect(o).toEqual(['first', 'same', 'flip', 'same', 'flip']);
+  });
+});
+
+describe('new hole position', () => {
+  it('middle of an empty leg, away from existing holes otherwise', () => {
+    expect(freeHolePosition([], 0, 180, 13)).toBe(90);
+    const second = freeHolePosition([90], 0, 180, 13, 10);
+    expect(Math.abs(second - 90)).toBeGreaterThan(60);
+    const third = freeHolePosition([90, second], 0, 180, 13, 10);
+    expect(Math.min(Math.abs(third - 90), Math.abs(third - second))).toBeGreaterThan(30);
+  });
+});
+
+describe('polish plural', () => {
+  it('uses one / few / many forms', () => {
+    const f: [string, string, string] = ['gięcie', 'gięcia', 'gięć'];
+    expect(plural(1, f)).toBe('1 gięcie');
+    expect(plural(2, f)).toBe('2 gięcia');
+    expect(plural(5, f)).toBe('5 gięć');
+    expect(plural(0, f)).toBe('0 gięć');
+    expect(plural(12, f)).toBe('12 gięć');
+    expect(plural(22, f)).toBe('22 gięcia');
   });
 });

@@ -25,3 +25,26 @@ export function removeStep(steps: Step[], i: number): Step[] {
   }
   return steps.filter((_, k) => k !== i);
 }
+
+/**
+ * Position (centre, in the leg's own coordinates) for a new hole on the straight part [start, end]
+ * of a leg: the middle when the leg has no holes yet, otherwise the place farthest from the
+ * existing hole centres, so a new hole never lands on top of another one.
+ */
+export function freeHolePosition(existing: number[], start: number, end: number, length: number, margin = 0): number {
+  const lo = start + length / 2 + margin;
+  const hi = end - length / 2 - margin;
+  const mid = (start + end) / 2;
+  if (!existing.length || hi <= lo) return Math.round(mid);
+  let best = Math.round(mid);
+  let bestScore = -Infinity;
+  for (let x = Math.ceil(lo); x <= Math.floor(hi); x++) {
+    const d = Math.min(...existing.map((e) => Math.abs(e - x)));
+    const score = d - Math.abs(x - mid) * 1e-3; // prefer the middle on ties
+    if (score > bestScore) {
+      bestScore = score;
+      best = x;
+    }
+  }
+  return best;
+}

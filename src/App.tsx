@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { analyze, fmt, type Issue } from './core/analyze';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { analyze, fmt, plural, type Issue } from './core/analyze';
 import { buildAssembly, type Assembly, type BarPart } from './core/assembly';
 import {
   DIMENSION_MODE_LABEL,
@@ -16,6 +16,7 @@ import { TEMPLATES } from './core/templates';
 import { sanitizeBusbar } from './core/sanitize';
 import { deleteProject, duplicateBar, loadProjects, useStore } from './store';
 import { DimensionModeHelp } from './ui/DimensionModeHelp';
+import { ProfileView } from './ui/ProfileView';
 import { SectionDialog } from './ui/SectionDialog';
 import { BendTable, FlatPatternSvg, HoleTable } from './ui/FlatPattern';
 import { NumPad, type NumPadRequest } from './ui/NumPad';
@@ -58,6 +59,7 @@ export default function App() {
     customSections,
     addCustomSection,
   } = useStore();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [sectionDialog, setSectionDialog] = useState<{ initial: Section; onOk: (s: Section) => void } | null>(null);
   const askCustomSection = (initial: Section, then: (s: Section) => void) =>
     setSectionDialog({
@@ -69,12 +71,15 @@ export default function App() {
     });
   const [tab, setTab] = useState<Tab>('model');
   const [modal, setModal] = useState<Modal>(null);
-  const [np, setNp] = useState<NumPadRequest | null>(null);
+  const [np, setNp] = useState<(NumPadRequest & { seq: number }) | null>(null);
+  // Every request gets its own keypad instance (key), so "OK i dalej" never shows the previous value.
+  const npSeq = useRef(0);
+  const openNumpad = useCallback((r: NumPadRequest) => setNp({ ...r, seq: ++npSeq.current }), []);
   const [snapshot, setSnapshot] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; undo?: boolean } | null>(null);
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
+    const t = setTimeout(() => setToast(null), toast.undo ? 7000 : 4000);
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -91,6 +96,14 @@ export default function App() {
 
   const onSelect = useCallback((i: number | null) => select(i), [select]);
 
+  /** Jump to the step of the first error (or warning) and select it. */
+  const goToFirstIssue = () => {
+    const first =
+      issues.find((i) => i.level === 'error' && i.stepIndex !== undefined) ?? issues.find((i) => i.stepIndex !== undefined);
+    setTab('model');
+    if (first?.stepIndex !== undefined) select(first.stepIndex);
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -104,7 +117,7 @@ export default function App() {
 
   const print = () => {
     if (IN_FRAME) {
-      setToast('Drukowanie nie działa w podglądzie osadzonym. Otwórz aplikację w osobnej karcie przeglądarki.');
+      setToast({ text: 'Drukowanie nie działa w podglądzie osadzonym. Otwórz aplikację w osobnej karcie przeglądarki.' });
       return;
     }
     setSnapshot(renderSnapshot(assembly.parts, assembly.bbox));
@@ -152,24 +165,47 @@ export default function App() {
           </button>
         </nav>
         <div className="top-actions">
-          <button onClick={undo} disabled={!past.length} title="Cofnij">
-            ↶
+          <button className="undo-btn act-undo" onClick={undo} disabled={!past.length} title="Cofnij">
+            ↶<span className="btn-text"> Cofnij</span>
           </button>
-          <button onClick={redo} disabled={!future.length} title="Ponów">
-            ↷
+          <button className="undo-btn act-redo" onClick={redo} disabled={!future.length} title="Ponów">
+            ↷<span className="btn-text"> Ponów</span>
           </button>
-          <button onClick={() => setModal('new')}>Nowa</button>
-          <button onClick={() => setModal('projects')}>Projekty</button>
-          <button className="btn-primary" onClick={print}>
+          <button className="wide-only" onClick={() => setModal('new')}>
+            Nowa
+          </button>
+          <button className="wide-only" onClick={() => setModal('projects')}>
+            Projekty
+          </button>
+          <button className="btn-primary wide-only" onClick={print}>
             🖨 Drukuj
           </button>
+          <button className="act-menu narrow-only" onClick={() => setMenuOpen((v) => !v)} aria-expanded={menuOpen}>
+            ⋯
+          </button>
+          {menuOpen && (
+            <div className="top-menu" onClick={() => setMenuOpen(false)}>
+              <button onClick={() => setModal('new')}>＋ Nowa szyna</button>
+              <button onClick={() => setModal('projects')}>📁 Projekty</button>
+              <button className="btn-primary" onClick={print}>
+                🖨 Drukuj
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
       <main className="main">
         {tab === 'model' && (
           <div className="model-tab">
-            <Viewer3D bar={bar} assembly={assembly} selected={selected} errorSteps={errorSteps} onSelect={onSelect} />
+            <Viewer3D
+              bar={bar}
+              assembly={assembly}
+              selected={selected}
+              errorSteps={errorSteps}
+              issues={issues}
+              onSelect={onSelect}
+            />
             <StepList
               bar={bar}
               analysis={analysis}
@@ -179,47 +215,75 @@ export default function App() {
               onSelect={onSelect}
               updateSteps={updateSteps}
               setDouble={(cfg) => update((b) => ({ ...b, double: cfg }))}
-              numpad={setNp}
+              onRemoved={(text) => setToast({ text, undo: true })}
+              numpad={openNumpad}
             />
           </div>
         )}
         {tab === 'flat' && (
           <div className="flat-tab">
             {errors > 0 && (
-              <div className="no-production">
-                ⛔ NIE DO PRODUKCJI – projekt zawiera błędy (szczegóły w kroku na zakładce Model 3D)
-              </div>
+              <button className="no-production" onClick={goToFirstIssue}>
+                ⛔ NIE DO PRODUKCJI – projekt zawiera błędy. Pokaż błędny krok ›
+              </button>
             )}
             {double && (
               <div className="card double-note">
                 <b>Podwójna szyna.</b> {doubleNote(assembly)}
               </div>
             )}
+            <div className="card">
+              <h3>Gotowa szyna – wymiary do sprawdzenia po gięciu</h3>
+              <ProfileView project={bar} assembly={assembly} />
+            </div>
             {assembly.parts.map((part) => (
               <PartDocs key={part.index} part={part} double={double} settings={settings} />
             ))}
           </div>
         )}
         {tab === 'settings' && (
-          <SettingsTab bar={bar} settings={settings} update={update} setSettings={setSettings} numpad={setNp} />
+          <SettingsTab bar={bar} settings={settings} update={update} setSettings={setSettings} numpad={openNumpad} />
         )}
       </main>
 
       <footer className={`statusbar ${errors ? 'has-errors' : warnings ? 'has-warnings' : ''}`}>
         <span>
-          Długość cięcia: <b>{assembly.parts.map((p) => `${fmt(p.analysis.flatLength)}`).join(' / ')} mm</b>
+          Długość cięcia:{' '}
+          {double ? (
+            <>
+              Sz.1 <b>{fmt(assembly.parts[0].analysis.flatLength)}</b> · Sz.2 <b>{fmt(assembly.parts[1].analysis.flatLength)}</b>{' '}
+              mm
+            </>
+          ) : (
+            <b>{fmt(analysis.flatLength)} mm</b>
+          )}
         </span>
         <span>{sectionLabel(bar.section)}</span>
         <span>Wymiary {DIMENSION_MODE_LABEL[bar.dimensionMode]}</span>
-        <span className="status-issues">
-          {errors ? `⛔ ${errors} błąd(y)` : ''} {warnings ? `⚠ ${warnings} ostrzeżenie(a)` : ''}
-          {!issues.length && (double ? '✔ Szyny poprawne' : '✔ Szyna poprawna')}
-        </span>
+        {issues.length ? (
+          <button className="status-issues" onClick={goToFirstIssue} title="Pokaż krok z problemem">
+            {errors ? `⛔ ${plural(errors, ['błąd', 'błędy', 'błędów'])}` : ''}{' '}
+            {warnings ? `⚠ ${plural(warnings, ['ostrzeżenie', 'ostrzeżenia', 'ostrzeżeń'])}` : ''} ›
+          </button>
+        ) : (
+          <span className="status-issues">{double ? '✔ Szyny poprawne' : '✔ Szyna poprawna'}</span>
+        )}
       </footer>
 
       {toast && (
-        <div className="toast" onClick={() => setToast(null)}>
-          {toast}
+        <div className="toast">
+          <span onClick={() => setToast(null)}>{toast.text}</span>
+          {toast.undo && (
+            <button
+              className="toast-undo"
+              onClick={() => {
+                undo();
+                setToast(null);
+              }}
+            >
+              ↶ Cofnij
+            </button>
+          )}
         </div>
       )}
       {notice && (
@@ -270,7 +334,7 @@ export default function App() {
       {sectionDialog && (
         <SectionDialog
           initial={sectionDialog.initial}
-          numpad={setNp}
+          numpad={openNumpad}
           onClose={() => setSectionDialog(null)}
           onOk={(sec) => {
             sectionDialog.onOk(sec);
@@ -278,7 +342,7 @@ export default function App() {
           }}
         />
       )}
-      {np && <NumPad req={np} onClose={() => setNp(null)} />}
+      {np && <NumPad key={np.seq} req={np} onClose={() => setNp(null)} />}
 
       <PrintSheet bar={bar} assembly={assembly} settings={settings} snapshot={snapshot} issues={issues} />
     </div>
@@ -390,7 +454,7 @@ function SettingsTab({
         {otherRadius > 0 && (
           <div className="radius-mismatch">
             <span>
-              W tym projekcie {otherRadius} {otherRadius === 1 ? 'gięcie ma' : 'gięć ma'} promień inny niż narzędzie (R
+              W tym projekcie {plural(otherRadius, ['gięcie ma', 'gięcia mają', 'gięć ma'])} promień inny niż narzędzie (R
               {fmt(settings.radius)}).
             </span>
             <button
@@ -447,11 +511,16 @@ function NewModal({
   onCreate: (b: Busbar) => void;
 }) {
   const [section, setSection] = useState<Section>(current);
+  const [orderNo, setOrderNo] = useState('');
   const list = sections.some((x) => sectionKey(x) === sectionKey(section)) ? sections : sectionList(sections, section);
   return (
     <div className="modal-backdrop" onPointerDown={onClose}>
       <div className="modal" onPointerDown={(e) => e.stopPropagation()}>
         <h2>Nowa szyna</h2>
+        <label className="field order-field">
+          <span className="field-label">Nr zlecenia (opcjonalnie, drukuje się w nagłówku)</span>
+          <input value={orderNo} onChange={(e) => setOrderNo(e.target.value)} placeholder="np. ZL/2026/123" />
+        </label>
         <div className="muted">1. Wybierz przekrój</div>
         <div className="section-grid">
           {list.map((x) => (
@@ -470,7 +539,10 @@ function NewModal({
         <div className="muted">2. Wybierz kształt startowy</div>
         <div className="template-grid">
           {TEMPLATES.map((t) => (
-            <button key={t.id} onClick={() => onCreate(newBusbar(section, t.build(settings), `Szyna ${t.name}`))}>
+            <button
+              key={t.id}
+              onClick={() => onCreate({ ...newBusbar(section, t.build(settings), `Szyna ${t.name}`), orderNo: orderNo.trim() })}
+            >
               <TemplateIcon id={t.id} />
               <b>{t.name}</b>
               <span>{t.description}</span>
@@ -534,7 +606,8 @@ function ProjectsModal({
               <button className="project-open" onClick={() => onOpen(p)}>
                 <b>{p.name}</b>
                 <span>
-                  {sectionLabel(p.section)} · {p.steps.filter((s) => s.kind === 'bend').length} gięć
+                  {sectionLabel(p.section)} ·{' '}
+                  {plural(p.steps.filter((s) => s.kind === 'bend').length, ['gięcie', 'gięcia', 'gięć'])}
                   {p.orderNo ? ` · zl. ${p.orderNo}` : ''} · {new Date(p.updatedAt).toLocaleString('pl-PL')}
                 </span>
               </button>
@@ -687,7 +760,6 @@ function PrintSheet({
   issues: Issue[];
 }) {
   const double = assembly.parts.length > 1;
-  const first = assembly.parts[0];
   return (
     <div className={`print-sheet ${double ? 'print-double' : ''}`}>
       {issues.some((i) => i.level === 'error') && (
@@ -730,39 +802,35 @@ function PrintSheet({
         </tbody>
       </table>
       <div className="print-row">
+        <figure className="print-profile">
+          <figcaption>Gotowa szyna – wymiary do sprawdzenia po gięciu (widok z przodu)</figcaption>
+          <ProfileView project={bar} assembly={assembly} width={900} maxHeight={420} />
+        </figure>
         {snapshot && <img src={snapshot} className="print-3d" alt="Widok 3D" />}
-        <div className="print-notes">
-          {!double && (
-            <>
-              <BendTable analysis={first.analysis} settings={settings} />
-              <HoleTable bar={first.bar} analysis={first.analysis} />
-            </>
-          )}
-          <div>
-            Wymiary ramion: <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b> · K {settings.k} · koniec A oznaczony na zielono
-          </div>
-          {double && <div>Podwójna szyna: {doubleNote(assembly)}</div>}
-          {issues.length > 0 && (
-            <div className="print-issues">
-              {issues.map((i, k) => (
-                <div key={k}>
-                  {i.level === 'error' ? '⛔' : '⚠'} {i.message}
-                </div>
-              ))}
-            </div>
-          )}
+      </div>
+      <div className="print-notes">
+        <div>
+          Wymiary ramion: <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b> · K {settings.k} · szynę wkładaj końcem A do zderzaka
         </div>
+        {double && <div>Podwójna szyna: {doubleNote(assembly)}</div>}
+        {issues.length > 0 && (
+          <div className="print-issues">
+            {issues.map((i, k) => (
+              <div key={k}>
+                {i.level === 'error' ? '⛔' : '⚠'} {i.message}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       {assembly.parts.map((part) => (
         <div key={part.index} className="print-part">
           <h3>Rozwinięcie{double ? ` – ${part.label}` : ''}</h3>
           <FlatPatternSvg bar={part.bar} analysis={part.analysis} settings={settings} width={1000} />
-          {double && (
-            <div className="print-tables">
-              <BendTable analysis={part.analysis} settings={settings} />
-              <HoleTable bar={part.bar} analysis={part.analysis} />
-            </div>
-          )}
+          <div className="print-tables">
+            <BendTable analysis={part.analysis} settings={settings} />
+            <HoleTable bar={part.bar} analysis={part.analysis} />
+          </div>
         </div>
       ))}
     </div>

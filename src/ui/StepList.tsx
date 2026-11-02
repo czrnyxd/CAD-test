@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { fmt, type Analysis, type Issue } from '../core/analyze';
 import { minRadius } from '../core/bending';
 import { doubleConfig } from '../core/assembly';
-import { removeStep } from '../core/edit';
+import { freeHolePosition, removeStep } from '../core/edit';
 import {
   DIRECTION_ARROW,
   DIRECTION_LABEL,
@@ -27,6 +27,8 @@ interface Props {
   onSelect: (i: number | null) => void;
   updateSteps: (fn: (steps: Step[]) => Step[]) => void;
   setDouble: (cfg: DoubleConfig) => void;
+  /** Called after a step was removed, with a description (shown with an undo button). */
+  onRemoved: (text: string) => void;
   numpad: (req: NumPadRequest) => void;
 }
 
@@ -39,8 +41,31 @@ const REF_TEXT = {
 
 const ANGLES = [15, 30, 45, 60, 90, 120, 135];
 
-export function StepList({ bar, analysis, issues, settings, selected, onSelect, updateSteps, setDouble, numpad }: Props) {
+export function StepList({
+  bar,
+  analysis,
+  issues,
+  settings,
+  selected,
+  onSelect,
+  updateSteps,
+  setDouble,
+  onRemoved,
+  numpad,
+}: Props) {
   const dbl = doubleConfig(bar);
+  // Which bar is inside the arc in each bend ("up" turns towards the side above).
+  const inner: number[] = [];
+  const outer: number[] = [];
+  analysis.bends.forEach((b) => ((b.direction === 'up') === (dbl.side === 'above') ? inner : outer).push(b.no));
+  const innerOuterText = !analysis.bends.length
+    ? ''
+    : [
+        inner.length ? `Szyna 2 wewnątrz łuku w gięciu ${inner.join(', ')}.` : '',
+        outer.length ? `Szyna 2 na zewnątrz łuku w gięciu ${outer.join(', ')}.` : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,19 +102,71 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
     const s = bar.steps[i];
     if (s.kind !== 'straight') return;
     const net = Math.max(0, analysis.netStraight[i] ?? s.length);
-    // Centre of the straight part of the leg, measured like the leg dimension.
+    // Straight part of the leg in the leg's own coordinates (measured like the leg dimension).
     const sbBefore = analysis.bends.find((b) => b.stepIndex === i - 1)?.setback ?? 0;
-    const pos = Math.round(sbBefore + net / 2);
-    const d = bar.section.width >= 30 ? 13 : 9;
+    const d0 = bar.section.width >= 30 ? 13 : 9;
+    const pos = freeHolePosition(
+      (s.holes ?? []).map((h) => h.position),
+      sbBefore,
+      sbBefore + net,
+      d0,
+      1.5 * bar.section.thickness,
+    );
     updateSteps((steps) =>
-      steps.map((st, k) => (k === i && st.kind === 'straight' ? { ...st, holes: [...(st.holes ?? []), hole(pos, d)] } : st)),
+      steps.map((st, k) => (k === i && st.kind === 'straight' ? { ...st, holes: [...(st.holes ?? []), hole(pos, d0)] } : st)),
     );
     onSelect(i);
   };
 
+  const legNoOf = (i: number) => bar.steps.slice(0, i + 1).filter((st) => st.kind === 'straight').length;
+  const bendNoOf = (i: number) => bar.steps.slice(0, i + 1).filter((st) => st.kind === 'bend').length;
+  const fieldLabel = (j: number) =>
+    bar.steps[j]?.kind === 'straight' ? `odcinek ${legNoOf(j)}` : bar.steps[j] ? `gięcie ${bendNoOf(j)}` : '';
+  /** "OK i dalej" opens the main value of the next step (length of a leg, angle of a bend). */
+  const nextOf = (i: number) => (bar.steps[i + 1] ? { onNext: () => editMain(i + 1), nextLabel: fieldLabel(i + 1) } : {});
+  const editMain = (i: number) => {
+    const st = bar.steps[i];
+    if (!st) return;
+    onSelect(i);
+    if (st.kind === 'straight') {
+      numpad({
+        title: `Odcinek ${legNoOf(i)} – długość (${bar.dimensionMode === 'outside' ? 'zewn.' : bar.dimensionMode === 'inside' ? 'wewn.' : 'oś'})`,
+        value: st.length,
+        unit: 'mm',
+        min: 1,
+        max: 10000,
+        onOk: (v) => patch(i, { length: v }),
+        ...nextOf(i),
+      });
+    } else {
+      numpad({
+        title: `Gięcie ${bendNoOf(i)} – o ile giąć`,
+        value: st.angle,
+        unit: '°',
+        min: 1,
+        max: 179,
+        quick: ANGLES,
+        figure: 'bend-angle',
+        onOk: (v) => patch(i, { angle: v }),
+        ...nextOf(i),
+      });
+    }
+  };
+
   const remove = (i: number) => {
-    updateSteps((steps) => removeStep(steps, i));
+    const st = bar.steps[i];
+    const next = removeStep(bar.steps, i);
+    if (next === bar.steps) return;
+    let text: string;
+    if (st.kind === 'bend') {
+      const merged = next[i - 1];
+      text = `Usunięto gięcie ${bendNoOf(i)}${merged?.kind === 'straight' ? ` – odcinki połączone w jeden (${fmt(merged.length)} mm)` : ''}.`;
+    } else {
+      text = `Usunięto odcinek ${legNoOf(i)}${bar.steps.length - next.length > 1 ? ' razem z sąsiednim gięciem' : ''}.`;
+    }
+    updateSteps(() => next);
     onSelect(null);
+    onRemoved(text);
   };
 
   let legNo = 0;
@@ -108,10 +185,10 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
           <>
             <div className="seg">
               <button className={dbl.side === 'above' ? 'on' : ''} onClick={() => setDouble({ ...dbl, side: 'above' })}>
-                2 nad
+                Szyna 2 nad
               </button>
               <button className={dbl.side === 'below' ? 'on' : ''} onClick={() => setDouble({ ...dbl, side: 'below' })}>
-                2 pod
+                Szyna 2 pod
               </button>
             </div>
             <Chip
@@ -132,7 +209,7 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
           </>
         )}
       </div>
-      {dbl.enabled && <div className="pack-hint">Wymiary odcinków i otworów dotyczą szyny 1.</div>}
+      {dbl.enabled && <div className="pack-hint">{innerOuterText} Wymiary odcinków i otworów wpisujesz dla szyny 1.</div>}
       <div className="steps-list" ref={listRef}>
         {bar.steps.map((s, i) => {
           const stepIssues = issues.filter((x) => x.stepIndex === i);
@@ -155,94 +232,110 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
                   <Del onClick={() => remove(i)} disabled={bar.steps.length <= 1} />
                 </div>
                 <div className="step-body">
-                  <Chip
-                    big
-                    label="Długość"
-                    value={`${fmt(s.length)} mm`}
-                    onClick={() =>
-                      numpad({
-                        title: `Odcinek ${n} – długość (${bar.dimensionMode === 'outside' ? 'zewn.' : bar.dimensionMode === 'inside' ? 'wewn.' : 'oś'})`,
-                        value: s.length,
-                        unit: 'mm',
-                        min: 1,
-                        max: 10000,
-                        onOk: (v) => patch(i, { length: v }),
-                      })
-                    }
-                  />
+                  <Chip big label="Długość" value={`${fmt(s.length)} mm`} onClick={() => editMain(i)} />
                   {net !== undefined && Math.abs(net - s.length) > 0.05 && (
                     <span className="step-note">prosta część: {fmt(net)} mm</span>
                   )}
                 </div>
-                {(s.holes ?? []).map((h) => {
-                  const info = analysis.holes.find((x) => x.holeId === h.id);
-                  const ref = i === 0 ? 'od końca A' : REF_TEXT[bar.dimensionMode];
-                  return (
-                    <div className="hole-row" key={h.id}>
-                      <span className="hole-badge">O{info?.no ?? '?'}</span>
-                      <Chip
-                        label={i === 0 ? 'Od A' : 'Pozycja'}
-                        value={`${fmt(h.position)}`}
-                        onClick={() =>
-                          numpad({
-                            title: `Odcinek ${n} – środek otworu ${ref}`,
-                            value: h.position,
-                            unit: 'mm',
-                            min: 0,
-                            max: s.length,
-                            onOk: (v) => patchHole(i, h.id, { position: v }),
-                          })
-                        }
-                      />
-                      <Chip
-                        label="Ø"
-                        value={`${fmt(h.diameter)}`}
-                        onClick={() =>
-                          numpad({
-                            title: 'Średnica otworu / szerokość fasolki',
-                            value: h.diameter,
-                            unit: 'mm',
-                            min: 1,
-                            max: bar.section.width,
-                            quick: HOLE_DIAMETERS,
-                            onOk: (v) => patchHole(i, h.id, { diameter: v }),
-                          })
-                        }
-                      />
-                      <Chip
-                        label="Fasolka"
-                        value={h.slot > h.diameter ? `${fmt(h.slot)}` : '—'}
-                        onClick={() =>
-                          numpad({
-                            title: 'Długość fasolki (0 = otwór okrągły)',
-                            value: h.slot,
-                            unit: 'mm',
-                            min: 0,
-                            max: 500,
-                            quick: [0, 20, 25, 30, 40],
-                            onOk: (v) => patchHole(i, h.id, { slot: v }),
-                          })
-                        }
-                      />
-                      <Chip
-                        label="Od osi"
-                        value={`${fmt(h.offset)}`}
-                        onClick={() =>
-                          numpad({
-                            title: 'Przesunięcie otworu od osi szyny (w poprzek)',
-                            value: h.offset,
-                            unit: 'mm',
-                            min: -bar.section.width / 2,
-                            max: bar.section.width / 2,
-                            quick: [0, -bar.section.width / 4, bar.section.width / 4],
-                            onOk: (v) => patchHole(i, h.id, { offset: v }),
-                          })
-                        }
-                      />
-                      <Del onClick={() => removeHole(i, h.id)} />
-                    </div>
-                  );
-                })}
+                {[...(s.holes ?? [])]
+                  .sort((a, b) => a.position - b.position)
+                  .map((h) => {
+                    const info = analysis.holes.find((x) => x.holeId === h.id);
+                    const ref = i === 0 ? 'od końca A' : REF_TEXT[bar.dimensionMode];
+                    const slot = h.slot > h.diameter;
+                    return (
+                      <div className="hole-row" key={h.id}>
+                        <div className="hole-line">
+                          <span className="hole-badge">O{info?.no ?? '?'}</span>
+                          <Chip
+                            big
+                            label={i === 0 ? 'Od końca A' : 'Od narożnika'}
+                            value={`${fmt(h.position)} mm`}
+                            onClick={() =>
+                              numpad({
+                                title: `Odcinek ${n} – środek otworu ${ref}`,
+                                value: h.position,
+                                unit: 'mm',
+                                min: 0,
+                                max: s.length,
+                                onOk: (v) => patchHole(i, h.id, { position: v }),
+                              })
+                            }
+                          />
+                          <Chip
+                            label={slot ? 'Szerokość' : 'Średnica'}
+                            value={`Ø ${fmt(h.diameter)}`}
+                            onClick={() =>
+                              numpad({
+                                title: slot ? 'Szerokość fasolki' : 'Średnica otworu',
+                                value: h.diameter,
+                                unit: 'mm',
+                                min: 1,
+                                max: bar.section.width,
+                                quick: HOLE_DIAMETERS,
+                                onOk: (v) => patchHole(i, h.id, { diameter: v }),
+                              })
+                            }
+                          />
+                          <Del onClick={() => removeHole(i, h.id)} />
+                        </div>
+                        <div className="hole-line">
+                          <div className="seg">
+                            <button
+                              className={!slot ? 'on' : ''}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                patchHole(i, h.id, { slot: 0 });
+                              }}
+                            >
+                              Okrągły
+                            </button>
+                            <button
+                              className={slot ? 'on' : ''}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!slot) patchHole(i, h.id, { slot: Math.round(h.diameter * 2) });
+                              }}
+                            >
+                              Fasolka
+                            </button>
+                          </div>
+                          {slot && (
+                            <Chip
+                              label="Długość fasolki"
+                              value={`${fmt(h.slot)} mm`}
+                              onClick={() =>
+                                numpad({
+                                  title: 'Długość fasolki (wzdłuż szyny, całkowita)',
+                                  value: h.slot,
+                                  unit: 'mm',
+                                  min: h.diameter,
+                                  max: 500,
+                                  quick: [20, 25, 30, 40],
+                                  onOk: (v) => patchHole(i, h.id, { slot: v }),
+                                })
+                              }
+                            />
+                          )}
+                          <Chip
+                            label="W poprzek"
+                            value={h.offset === 0 ? 'środek' : `${h.offset > 0 ? '+' : ''}${fmt(h.offset)} mm`}
+                            onClick={() =>
+                              numpad({
+                                title: 'Przesunięcie w poprzek szyny od środka (+ w stronę dolnej krawędzi rysunku)',
+                                value: h.offset,
+                                unit: 'mm',
+                                min: -bar.section.width / 2,
+                                max: bar.section.width / 2,
+                                quick: [0, -bar.section.width / 4, bar.section.width / 4],
+                                onOk: (v) => patchHole(i, h.id, { offset: v }),
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 <button
                   className="add-hole"
                   onClick={(e) => {
@@ -281,22 +374,7 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
                       </button>
                     ))}
                   </div>
-                  <Chip
-                    big
-                    label="Kąt"
-                    value={`${fmt(s.angle)}°`}
-                    onClick={() =>
-                      numpad({
-                        title: `Gięcie ${info?.no} – kąt gięcia`,
-                        value: s.angle,
-                        unit: '°',
-                        min: 1,
-                        max: 179,
-                        quick: ANGLES,
-                        onOk: (v) => patch(i, { angle: v }),
-                      })
-                    }
-                  />
+                  <Chip big label="Kąt" value={`${fmt(s.angle)}°`} onClick={() => editMain(i)} />
                   <Chip
                     label="R"
                     value={`${fmt(s.radius)}`}
@@ -319,8 +397,15 @@ export function StepList({ bar, analysis, issues, settings, selected, onSelect, 
                   </div>
                 )}
                 {info && (
-                  <div className="step-note">
-                    nastawa {fmt(info.machineAngle)}° · pozycja {fmt(info.position)} mm
+                  <div className="step-tiles">
+                    <div className="tile">
+                      <span className="chip-label">Nastawa</span>
+                      <b>{fmt(info.machineAngle)}°</b>
+                    </div>
+                    <div className="tile">
+                      <span className="chip-label">Pozycja od A</span>
+                      <b>{fmt(info.position)} mm</b>
+                    </div>
                   </div>
                 )}
                 <IssueList issues={stepIssues} />

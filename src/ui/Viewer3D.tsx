@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { fmt } from '../core/analyze';
+import { fmt, type Issue } from '../core/analyze';
 import type { Assembly } from '../core/assembly';
 import { dirVector, keyPoints, legDimensions } from '../core/geometry';
 import { DIMENSION_MODE_LABEL, DIRECTION_ARROW, type Busbar } from '../core/model';
@@ -15,6 +15,7 @@ interface Props {
   assembly: Assembly;
   selected: number | null;
   errorSteps: Set<number>;
+  issues: Issue[];
   onSelect: (i: number | null) => void;
 }
 
@@ -48,7 +49,7 @@ function disposeGroup(g: THREE.Group) {
   g.clear();
 }
 
-export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Props) {
+export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect }: Props) {
   const part1 = assembly.parts[0];
   const { path, analysis } = part1;
   const bbox = assembly.bbox;
@@ -228,9 +229,20 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Prop
           .addScaledVector(f.t, h.posOnStraight)
           .addScaledVector(f.w, h.offset)
           .addScaledVector(f.n, bar.section.thickness / 2);
-        l.center.set(-0.15, 1.2);
+        l.center.set(-0.3, 1.9); // beside and above the hole, clear of the leg dimension label
         c.overlay.add(l);
       }
+    }
+    // Errors are always shown on the model, next to the step they belong to.
+    for (const step of errorSteps) {
+      const range = path.stepRanges[step];
+      const msg = issues.find((x) => x.level === 'error' && x.stepIndex === step)?.message;
+      if (!range || !msg) continue;
+      const mid = path.samples[Math.round((range[0] + range[1]) / 2)];
+      const l = label(`⛔ ${msg.replace(/^Szyna \d: /, '')}`, 'lbl-error');
+      l.position.copy(mid.p);
+      l.center.set(0.5, -0.4);
+      c.overlay.add(l);
     }
     if (selected !== null && bar.steps[selected]?.kind === 'bend') {
       const s = bar.steps[selected];
@@ -249,14 +261,19 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, onSelect }: Prop
     }
 
     // Fit the camera when a different project is opened.
-    if (fittedFor.current !== bar.id) {
-      fittedFor.current = bar.id;
+    const fitKey = `${bar.id}:${assembly.parts.length}`;
+    if (fittedFor.current?.split(':')[0] !== bar.id) {
+      fittedFor.current = fitKey;
       setView('iso');
+    } else if (fittedFor.current !== fitKey) {
+      // Switched between single and double bar: fit the new set of bars, keep the viewing direction.
+      fittedFor.current = fitKey;
+      setView();
     } else if (outOfView()) {
       setView();
     }
     c.render();
-  }, [bar, assembly, selected, errorSteps, showDims]);
+  }, [bar, assembly, selected, errorSteps, issues, showDims]);
 
   // Measurement visuals.
   useEffect(() => {

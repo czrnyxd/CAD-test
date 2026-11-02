@@ -338,3 +338,26 @@ export function holeGap(
 export function fmt(v: number, digits = 1): string {
   return v.toLocaleString('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: digits });
 }
+
+/**
+ * How to lay the bar in the machine for each bend. The bar always goes in with end A against the
+ * stop; before a bend in the opposite direction to the previous one the bar is turned over, before a
+ * bend in the same direction it is not.
+ */
+export type BendOrientation = 'first' | 'same' | 'flip';
+
+export function bendOrientations(bends: { direction: Direction }[]): BendOrientation[] {
+  return bends.map((b, i) => (i === 0 ? 'first' : b.direction === bends[i - 1].direction ? 'same' : 'flip'));
+}
+
+export const ORIENTATION_LABEL: Record<BendOrientation, string> = {
+  first: 'ułóż wg kierunku',
+  same: 'bez obracania',
+  flip: '↻ obróć szynę',
+};
+
+/** Polish plural form: plural(2, ['błąd', 'błędy', 'błędów']) → '2 błędy'. */
+export function plural(n: number, [one, few, many]: [string, string, string]): string {
+  const word = n === 1 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many;
+  return `${n} ${word}`;
+}
