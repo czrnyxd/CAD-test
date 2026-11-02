@@ -12,12 +12,15 @@ import {
   type Step,
 } from './core/model';
 import { sanitizeBusbar, sanitizeSettings } from './core/sanitize';
+import type { Tombstone } from './core/syncPlan';
 import { TEMPLATES } from './core/templates';
 
 const LS_PROJECTS = 'busbar.projects.v1';
 const LS_SETTINGS = 'busbar.settings.v1';
 const LS_CURRENT = 'busbar.current.v1';
 const LS_SECTIONS = 'busbar.sections.v1';
+const LS_DELETED = 'busbar.deleted.v1';
+const LS_SETTINGS_AT = 'busbar.settingsAt.v1';
 const HISTORY_LIMIT = 200;
 
 // Storage may be missing or throw (private mode, sandboxed frames, quota) – never let it break the app.
@@ -95,21 +98,123 @@ function saveProject(bar: Busbar): boolean {
   return ok;
 }
 
+/** Projects deleted on this device, until the server has been told (see sync.ts). */
+let localDeleted: Tombstone[] = (() => {
+  const raw = loadJson(LS_DELETED);
+  return Array.isArray(raw) ? raw.filter((d) => d && typeof d.id === 'string' && typeof d.deletedAt === 'string') : [];
+})();
+
 export function deleteProject(id: string) {
   delete projects[id];
   persistProjects();
+  localDeleted = [...localDeleted.filter((d) => d.id !== id), { id, deletedAt: new Date().toISOString() }];
+  lsSet(LS_DELETED, JSON.stringify(localDeleted));
+  notifyChange();
+}
+
+export function getLocalDeleted(): Tombstone[] {
+  return [...localDeleted];
+}
+
+export function forgetLocalDeleted(ids: string[]) {
+  localDeleted = localDeleted.filter((d) => !ids.includes(d.id));
+  lsSet(LS_DELETED, JSON.stringify(localDeleted));
+}
+
+/** When the shared machine settings were last changed on this device. */
+export function getSettingsUpdatedAt(): string {
+  return lsGet(LS_SETTINGS_AT) || '1970-01-01T00:00:00.000Z';
+}
+
+/** Listeners for local changes that should go to the server (projects, deletions, settings). */
+type ChangeListener = (what: { project?: Busbar; settings?: boolean }) => void;
+const changeListeners = new Set<ChangeListener>();
+export function onLocalChange(fn: ChangeListener): () => void {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+function notifyChange(what: { project?: Busbar; settings?: boolean } = {}) {
+  for (const fn of changeListeners) fn(what);
+}
+
+/**
+ * Take projects coming from the server (already newer than the local ones). The project open on
+ * screen is replaced too, without touching its undo history.
+ */
+export function applyRemoteProjects(list: unknown[]): number {
+  const settings = useStore.getState().settings;
+  let n = 0;
+  for (const raw of list) {
+    const res = sanitizeBusbar(raw, settings);
+    if (!res.bar) continue;
+    projects[res.bar.id] = res.bar;
+    n++;
+    const st = useStore.getState();
+    if (st.bar.id === res.bar.id && Date.parse(res.bar.updatedAt) > Date.parse(st.bar.updatedAt)) {
+      applyingRemote = true;
+      useStore.setState({ bar: res.bar });
+      applyingRemote = false;
+    }
+  }
+  if (n) persistProjects();
+  return n;
+}
+
+/** Remove local copies of projects deleted on another device (the project on screen is kept). */
+export function removeLocalProjects(ids: string[]) {
+  const current = useStore.getState().bar.id;
+  let changed = false;
+  for (const id of ids) {
+    if (id === current || !projects[id]) continue;
+    delete projects[id];
+    changed = true;
+  }
+  if (changed) persistProjects();
+}
+
+/** Shared machine settings and custom sections from the server. */
+export function applyRemoteState(state: { settings?: unknown; settingsUpdatedAt?: string | null; sections?: unknown }) {
+  const st = useStore.getState();
+  if (state.settings && state.settingsUpdatedAt && Date.parse(state.settingsUpdatedAt) > Date.parse(getSettingsUpdatedAt())) {
+    const settings = sanitizeSettings(state.settings, DEFAULT_SETTINGS);
+    lsSet(LS_SETTINGS, JSON.stringify(settings));
+    lsSet(LS_SETTINGS_AT, state.settingsUpdatedAt);
+    useStore.setState({ settings });
+  }
+  if (Array.isArray(state.sections)) {
+    let list = st.customSections;
+    for (const x of state.sections) {
+      const sec = { width: Number(x?.width), thickness: Number(x?.thickness), material: 'Cu' as const };
+      if (sectionError(sec.width, sec.thickness) !== null) continue;
+      if ([...SECTIONS, ...list].some((k) => sectionKey(k) === sectionKey(sec))) continue;
+      list = [...list, sec];
+    }
+    if (list !== st.customSections) {
+      lsSet(LS_SECTIONS, JSON.stringify(list));
+      useStore.setState({ customSections: list });
+    }
+  }
+}
+
+let applyingRemote = false;
+
+/** The starter project created on a fresh device: not sent to the server until it is changed. */
+let pristineId: string | null = null;
+export function isPristine(id: string): boolean {
+  return id === pristineId;
 }
 
 function initialBar(): Busbar {
   const currentId = lsGet(LS_CURRENT);
-  return (
-    (currentId && projects[currentId]) ||
-    newBusbar(
-      SECTIONS.find((s) => s.width === 40 && s.thickness === 10)!,
-      TEMPLATES[1].build(initialSettings),
-      'Szyna L',
-    )
+  const existing = currentId && projects[currentId];
+  if (existing) return existing;
+  const starter = newBusbar(
+    SECTIONS.find((s) => s.width === 40 && s.thickness === 10)!,
+    TEMPLATES[1].build(initialSettings),
+    'Szyna L',
   );
+  if (!Object.keys(projects).length) pristineId = starter.id;
+  return starter;
 }
 
 export interface AppState {
@@ -158,6 +263,7 @@ export const useStore = create<AppState>((set, get) => ({
     const customSections = [...get().customSections, { ...sec }];
     lsSet(LS_SECTIONS, JSON.stringify(customSections));
     set({ customSections });
+    notifyChange({ settings: true });
   },
   update: (fn, record = true) => {
     const prev = get().bar;
@@ -180,7 +286,9 @@ export const useStore = create<AppState>((set, get) => ({
   setSettings: (s) => {
     const settings = { ...get().settings, ...s };
     const ok = lsSet(LS_SETTINGS, JSON.stringify(settings));
+    lsSet(LS_SETTINGS_AT, new Date().toISOString());
     set({ settings, saveOk: ok });
+    notifyChange({ settings: true });
   },
   open: (bar, changes) =>
     set({
@@ -197,6 +305,8 @@ export const useStore = create<AppState>((set, get) => ({
 useStore.subscribe((state, prev) => {
   if (state.bar !== prev.bar) {
     const ok = saveProject(state.bar);
+    if (state.bar.id === pristineId && prev.bar.id === pristineId) pristineId = null; // edited → a real project
+    if (!applyingRemote && state.bar.id !== pristineId) notifyChange({ project: state.bar });
     if (ok !== state.saveOk) useStore.setState({ saveOk: ok });
   }
 });

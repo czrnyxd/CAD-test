@@ -17,6 +17,7 @@ import {
   type StraightStep,
 } from './model';
 import { sanitizeBusbar } from './sanitize';
+import { planSync } from './syncPlan';
 import { freeHolePosition, removeStep } from './edit';
 
 const S40x10: Section = { width: 40, thickness: 10, material: 'Cu' };
@@ -524,5 +525,53 @@ describe('polish plural', () => {
     expect(plural(0, f)).toBe('0 gięć');
     expect(plural(12, f)).toBe('12 gięć');
     expect(plural(22, f)).toBe('22 gięcia');
+  });
+});
+
+describe('sync plan', () => {
+  const b = (id: string, updatedAt: string) => ({ ...newBusbar(S40x10, [straight(100)]), id, updatedAt });
+  const T = (h: number) => `2026-11-01T${String(h).padStart(2, '0')}:00:00.000Z`;
+
+  it('pushes local-only and newer, applies remote-only and newer', () => {
+    const local = { a: b('a', T(10)), b: b('b', T(12)), c: b('c', T(10)) };
+    const remote = [b('b', T(11)), b('c', T(13)), b('d', T(9))];
+    const plan = planSync(local, remote, [], []);
+    expect(plan.toPush.map((x) => x.id).sort()).toEqual(['a', 'b']);
+    expect(plan.toApply.map((x) => x.id).sort()).toEqual(['c', 'd']);
+  });
+
+  it('deletion on another device removes the local copy unless it was changed later', () => {
+    const local = { a: b('a', T(10)), e: b('e', T(14)) };
+    const plan = planSync(
+      local,
+      [],
+      [
+        { id: 'a', deletedAt: T(11) },
+        { id: 'e', deletedAt: T(11) },
+      ],
+      [],
+    );
+    expect(plan.toRemoveLocal).toEqual(['a']);
+    expect(plan.toPush.map((x) => x.id)).toEqual(['e']);
+  });
+
+  it('deletion here is sent to the server unless the server copy is newer', () => {
+    const remote = [b('x', T(10)), b('y', T(15))];
+    const plan = planSync(
+      {},
+      remote,
+      [],
+      [
+        { id: 'x', deletedAt: T(12) },
+        { id: 'y', deletedAt: T(12) },
+      ],
+    );
+    expect(plan.toDeleteRemote).toEqual(['x']);
+    expect(plan.toApply.map((p) => p.id)).toEqual(['y']);
+  });
+
+  it('nothing to do when both sides are equal', () => {
+    const plan = planSync({ a: b('a', T(10)) }, [b('a', T(10))], [], []);
+    expect(plan).toEqual({ toPush: [], toApply: [], toRemoveLocal: [], toDeleteRemote: [] });
   });
 });

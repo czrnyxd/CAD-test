@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles.css';
+import { startSync } from './sync';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -17,3 +18,6 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator && window.self === wind
     });
   });
 }
+
+// Saving projects on the BusBar CAD server, when configured (Ustawienia → Serwer).
+startSync();

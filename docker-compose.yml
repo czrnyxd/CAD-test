@@ -1,0 +1,17 @@
+# Start:   docker compose up -d --build
+# Update:  git pull && docker compose up -d --build
+services:
+  busbar-cad:
+    build: .
+    container_name: busbar-cad
+    restart: unless-stopped
+    environment:
+      API_TOKEN: ${API_TOKEN:?Ustaw API_TOKEN w pliku .env (kod dostępu dla tabletów)}
+    # Only on localhost – the existing reverse proxy (Caddy / nginx) publishes it with HTTPS.
+    ports:
+      - '127.0.0.1:${BUSBAR_PORT:-8090}:8080'
+    volumes:
+      - busbar-data:/data
+
+volumes:
+  busbar-data:

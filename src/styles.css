@@ -1958,3 +1958,44 @@ body {
   background: var(--accent);
   color: #fff;
 }
+
+/* Server sync */
+.sync-badge {
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 40px;
+  padding: 0 8px;
+  color: var(--muted);
+}
+.sync-badge.sync-ok {
+  color: var(--ok);
+}
+.sync-badge.sync-offline,
+.sync-badge.sync-error,
+.sync-badge.sync-auth,
+.sync-badge.sync-detected {
+  color: #9a6700;
+}
+.server-state {
+  font-weight: 600;
+}
+.server-state.server-ok {
+  color: var(--ok);
+}
+.server-state.server-offline,
+.server-state.server-auth,
+.server-state.server-error,
+.server-state.server-detected {
+  color: #9a6700;
+}
+.server-actions {
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+@media (max-width: 640px) {
+  .statusbar .sync-badge {
+    display: none;
+  }
+}

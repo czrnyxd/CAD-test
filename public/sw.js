@@ -33,6 +33,8 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  // Server API (projects): always live, never from the offline cache.
+  if (url.pathname.includes('/api/')) return;
 
   if (req.mode === 'navigate') {
     event.respondWith(

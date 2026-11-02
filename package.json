@@ -10,7 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
-    "lint": "prettier --check \"src/**/*.{ts,tsx,css}\" && tsc --noEmit"
+    "lint": "prettier --check \"src/**/*.{ts,tsx,css}\" && tsc --noEmit",
+    "server": "node server/server.mjs"
   },
   "dependencies": {
     "react": "^19.3.1",

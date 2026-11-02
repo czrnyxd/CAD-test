@@ -15,6 +15,14 @@ npm run build      # wersja produkcyjna w katalogu dist/ (statyczne pliki)
 
 Po `npm run dev` otwórz na tablecie adres `http://<ip-komputera>:5173`.
 
+## Serwer projektów (VPS)
+
+`server/server.mjs` (Node, bez zależności) przechowuje projekty i wspólne ustawienia maszyny jako pliki JSON, z historią wersji i koszem, i jednocześnie serwuje aplikację. Dostęp chroni kod dostępu (`API_TOKEN`). Aplikacja zapisuje zawsze najpierw lokalnie, a gdy jest połączenie, synchronizuje się z serwerem (Ustawienia → Serwer; status na pasku stanu). Wdrożenie Dockerem obok innych usług: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+
+```bash
+API_TOKEN=tajny-kod npm run server   # lokalnie: aplikacja + API na http://localhost:8080
+```
+
 ## Wersja online (GitHub Pages)
 
 Każdy push na `master` buduje aplikację i publikuje ją pod adresem **https://czrnyxd.github.io/CAD-test/** (workflow `.github/workflows/pages.yml`).

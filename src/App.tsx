@@ -20,6 +20,7 @@ import { deleteProject, duplicateBar, loadProjects, useStore } from './store';
 import { DimensionModeHelp } from './ui/DimensionModeHelp';
 import { ProfileView } from './ui/ProfileView';
 import { SectionDialog } from './ui/SectionDialog';
+import { ServerSettings, SyncBadge } from './ui/ServerSettings';
 import { BendTable, FlatPatternSvg, HoleTable } from './ui/FlatPattern';
 import { NumPad, type NumPadRequest } from './ui/NumPad';
 import { renderSnapshot } from './ui/scene';
@@ -262,6 +263,7 @@ export default function App() {
         </span>
         <span>{sectionLabel(bar.section)}</span>
         <span>Wymiary {DIMENSION_MODE_LABEL[bar.dimensionMode]}</span>
+        <SyncBadge onOpenSettings={() => setTab('settings')} />
         {issues.length ? (
           <button className="status-issues" onClick={goToFirstIssue} title="Pokaż krok z problemem">
             {errors ? `⛔ ${plural(errors, ['błąd', 'błędy', 'błędów'])}` : ''}{' '}
@@ -389,6 +391,7 @@ function SettingsTab({
   );
   return (
     <div className="settings-tab">
+      <ServerSettings />
       <div className="card">
         <h3>Projekt</h3>
         <div className="fields">
