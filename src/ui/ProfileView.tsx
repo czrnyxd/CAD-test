@@ -88,11 +88,11 @@ export function ProfileView({
     <svg className="profile-svg" viewBox={`0 0 ${width} ${height}`} width="100%" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <marker id={arrowId} viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="#1f5fbf" />
+          <path d="M0,0 L10,5 L0,10 z" fill="#12171d" />
         </marker>
       </defs>
       {outlines.map((o) => (
-        <path key={o.index} d={path(o.pts)} fill={o.index === 2 ? '#d9a27a' : '#e7b48a'} stroke="#6b3d16" strokeWidth="1.5" />
+        <path key={o.index} d={path(o.pts)} fill={o.index === 2 ? '#dde2e8' : '#f6e6d8'} stroke="#12171d" strokeWidth="1.5" />
       ))}
       {dimLines.map((l, i) => {
         const ang = (Math.atan2(-(Y(l.d2.y) - Y(l.d1.y)), X(l.d2.x) - X(l.d1.x)) * 180) / Math.PI;
@@ -101,20 +101,20 @@ export function ProfileView({
         const my = (Y(l.d1.y) + Y(l.d2.y)) / 2;
         return (
           <g key={i}>
-            <line x1={X(l.from.x)} y1={Y(l.from.y)} x2={X(l.d1.x)} y2={Y(l.d1.y)} stroke="#1f5fbf" strokeWidth="0.8" />
-            <line x1={X(l.to.x)} y1={Y(l.to.y)} x2={X(l.d2.x)} y2={Y(l.d2.y)} stroke="#1f5fbf" strokeWidth="0.8" />
+            <line x1={X(l.from.x)} y1={Y(l.from.y)} x2={X(l.d1.x)} y2={Y(l.d1.y)} stroke="#12171d" strokeWidth="0.8" />
+            <line x1={X(l.to.x)} y1={Y(l.to.y)} x2={X(l.d2.x)} y2={Y(l.d2.y)} stroke="#12171d" strokeWidth="0.8" />
             <line
               x1={X(l.d1.x)}
               y1={Y(l.d1.y)}
               x2={X(l.d2.x)}
               y2={Y(l.d2.y)}
-              stroke="#1f5fbf"
+              stroke="#12171d"
               strokeWidth="1.4"
               markerStart={`url(#${arrowId})`}
               markerEnd={`url(#${arrowId})`}
             />
-            <circle cx={X(l.from.x)} cy={Y(l.from.y)} r="3.5" fill="#e8590c" />
-            <circle cx={X(l.to.x)} cy={Y(l.to.y)} r="3.5" fill="#e8590c" />
+            <circle cx={X(l.from.x)} cy={Y(l.from.y)} r="3.5" fill="#f08c00" />
+            <circle cx={X(l.to.x)} cy={Y(l.to.y)} r="3.5" fill="#f08c00" />
             <text x={mx} y={my - 6} textAnchor="middle" className="pv-dim" transform={`rotate(${rot} ${mx} ${my})`}>
               {l.text}
             </text>

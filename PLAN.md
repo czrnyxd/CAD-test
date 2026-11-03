@@ -278,7 +278,10 @@ type MachineProfile = {
 
 ## 9. Do zrobienia (backlog)
 
-### Pomiar: dokładniejsze zaznaczanie punktów
+### Pomiar: dokładniejsze zaznaczanie punktów – zrobione
+
+Wdrożone: lupa po przytrzymaniu (300 ms, 150 px, 3×, nad palcem, krzyżyk i podpis punktu), punkty o stałym rozmiarze i kształcie wg rodzaju z legendą, przygaszanie punktów zasłoniętych przez szynę (przy ponad 80 punktach zasłonięte są ukryte). Zostaje test w rękawicy na prawdziwym tablecie.
+
 
 Dziś punkt wybiera się tapnięciem z przyciąganiem do najbliższego punktu w promieniu 60 px, a
 przyciskiem „↻ Inny punkt” przełącza się między sąsiednimi punktami. Przy łukach i małych

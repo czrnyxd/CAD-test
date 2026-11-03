@@ -5,11 +5,11 @@ import { sectionCorners, type BarPath } from '../core/geometry';
 import type { Busbar } from '../core/model';
 
 export const COPPER = new THREE.Color('#c87533');
-export const COPPER_2 = new THREE.Color('#a9612f');
+export const COPPER_2 = new THREE.Color('#d9a441');
 const HOLE_COLOR = '#24150a';
 export const COPPER_SELECTED = new THREE.Color('#ffcf6e');
 export const COPPER_ERROR = new THREE.Color('#d9534f');
-export const START_COLOR = new THREE.Color('#2ecc71');
+export const START_COLOR = new THREE.Color('#0f7b3f');
 
 export interface BarObject {
   group: THREE.Group;

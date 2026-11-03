@@ -45,7 +45,7 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
   - tap na szynę zaznacza krok,
   - linie wymiarowe ramion jak na rysunku technicznym: pomarańczowe punkty pokazują, skąd dokąd liczony jest wymiar (zależnie od trybu: zewnętrzny / wewnętrzny ostry narożnik albo oś), przerywane linie przedłużają ściany do ostrego narożnika,
   - oznaczenie końca **A**.
-- **Pomiar:** punkt–punkt z przyciąganiem do narożników, środków otworów, końców i **punktów wymiarów** (ostrych narożników – można zmierzyć dokładnie wpisany wymiar). Przy każdym punkcie opis, przycisk „↻ Inny punkt” przełącza na sąsiedni punkt bez ponownego celowania; wynik z ΔX/ΔY/ΔZ w pasku na dole widoku.
+- **Pomiar:** punkt–punkt z przyciąganiem do narożników, środków otworów, końców i **punktów wymiarów** (ostrych narożników – można zmierzyć dokładnie wpisany wymiar). Punkty mają stały rozmiar na ekranie i kształt zależny od rodzaju (narożnik – kwadrat, punkt wymiaru – pomarańczowy romb, otwór – kółko z krzyżykiem, środek końca – zielone kółko); punkty po niewidocznej stronie szyny są przygaszone. **Przytrzymanie palca** (ok. 0,3 s) otwiera lupę nad palcem (powiększenie 3×, krzyżyk, podpis punktu): przesuwanie palca zmienia punkt, puszczenie go wybiera, drugi palec anuluje. Zwykłe tapnięcie i obrót działają jak wcześniej. Przycisk „Inny punkt” przełącza na sąsiedni punkt bez ponownego celowania; wynik z ΔX/ΔY/ΔZ w karcie w rogu widoku.
 - **Obliczenia:**
   - naddatek na gięcie (BA), setback i długość rozwinięcia,
   - pozycje linii gięć (początek, środek lub koniec łuku),
@@ -61,11 +61,15 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
 - **Przekroje:** lista typowych przekrojów Cu oraz **„Inny przekrój…”** (na liście u góry; w oknie nowej szyny pola rozwijają się w tym samym oknie): szerokość 5–300 mm, grubość 1–50 mm (mniejsza od szerokości), podgląd przekroju w skali. Własne przekroje są zapamiętywane na liście.
 - **Ustawienia maszyny:** nazwa maszyny, promień narzędzia (z przyciskiem „ustaw we wszystkich gięciach projektu”), K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
 
+## Wygląd (system projektowy)
+
+Interfejs korzysta z systemu projektowego „BusBar CAD”: tokeny kolorów, odstępów i typografii w `src/tokens.css`, style komponentów (`bb-*`) w `src/design.css`, układ aplikacji w `src/styles.css`. Krój Barlow jest dołączony do aplikacji (pakiety `@fontsource`), więc działa bez internetu. Zasady: obrys = „stuknij, by zmienić”, szare tło bez obrysu = wynik obliczeń, niebieskie wypełnienie = wybrane / główna akcja, miedź tylko dla szyny. Układy: tablet poziomo (model po lewej, kroki 460 px po prawej, klawiatura na miejscu panelu), tablet pionowo i telefon (nagłówek w 2 rzędach), wydruk A4 poziomo.
+
 ## Struktura
 
 ```
 src/core/      model danych, obliczenia gięć, geometria 3D (bez UI, z testami)
-src/ui/        widok 3D (three.js), lista kroków, klawiatura, rozwinięcie
+src/ui/        widok 3D (three.js), lista kroków, klawiatura, rozwinięcie, ikony i kontrolki systemu projektowego
 src/store.ts   stan aplikacji, historia cofnij/ponów, zapis lokalny
 ```
 

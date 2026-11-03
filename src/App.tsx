@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { analyze, fmt, plural, type Issue } from './core/analyze';
 import { buildAssembly, type Assembly, type BarPart } from './core/assembly';
 import {
@@ -17,7 +17,10 @@ import {
 import { TEMPLATES } from './core/templates';
 import { sanitizeBusbar } from './core/sanitize';
 import { deleteProject, duplicateBar, loadProjects, useStore } from './store';
+import { Chip, Notice, Seg } from './ui/controls';
+import { Dialog } from './ui/Dialog';
 import { DimensionModeHelp } from './ui/DimensionModeHelp';
+import { Icon, Mark, type IconName } from './ui/Icon';
 import { ProfileView } from './ui/ProfileView';
 import { SectionDialog } from './ui/SectionDialog';
 import { ServerSettings, SyncBadge } from './ui/ServerSettings';
@@ -28,6 +31,7 @@ import { StepList } from './ui/StepList';
 import { Viewer3D } from './ui/Viewer3D';
 
 type Tab = 'model' | 'flat' | 'settings';
+type Layout = 'tablet' | 'portrait' | 'phone';
 
 /** Select value that opens the "Inny przekrój" dialog. */
 const CUSTOM = '__custom';
@@ -41,6 +45,50 @@ const IN_FRAME = (() => {
   }
 })();
 type Modal = null | 'new' | 'projects';
+
+/** Tablet in landscape (model left, steps right), tablet in portrait (stacked) or phone. */
+function useLayout(): Layout {
+  const get = (): Layout =>
+    window.innerWidth < 700
+      ? 'phone'
+      : window.innerWidth < 1000 || window.innerHeight > window.innerWidth
+        ? 'portrait'
+        : 'tablet';
+  const [layout, setLayout] = useState(get);
+  useEffect(() => {
+    const on = () => setLayout(get());
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  return layout;
+}
+
+const TABS: { value: Tab; label: string; short: string; icon: IconName }[] = [
+  { value: 'model', label: 'Model 3D', short: 'Model', icon: 'cube' },
+  { value: 'flat', label: 'Rozwinięcie', short: 'Rozwinięcie', icon: 'flat' },
+  { value: 'settings', label: 'Ustawienia', short: 'Ustaw.', icon: 'gear' },
+];
+
+function ToolButton({
+  icon,
+  label,
+  onClick,
+  disabled,
+  className,
+}: {
+  icon: IconName;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <button type="button" className={`bb-tool ${className ?? ''}`} onClick={onClick} disabled={disabled}>
+      <Icon name={icon} />
+      <span className="bb-tool-label">{label}</span>
+    </button>
+  );
+}
 
 export default function App() {
   const {
@@ -62,6 +110,7 @@ export default function App() {
     customSections,
     addCustomSection,
   } = useStore();
+  const layout = useLayout();
   const [menuOpen, setMenuOpen] = useState(false);
   const [sectionDialog, setSectionDialog] = useState<{ initial: Section; onOk: (s: Section) => void } | null>(null);
   const askCustomSection = (initial: Section, then: (s: Section) => void) =>
@@ -78,6 +127,8 @@ export default function App() {
   // Every request gets its own keypad instance (key), so "OK i dalej" never shows the previous value.
   const npSeq = useRef(0);
   const openNumpad = useCallback((r: NumPadRequest) => setNp({ ...r, seq: ++npSeq.current }), []);
+  // A keypad belongs to the screen it was opened on.
+  useEffect(() => setNp(null), [tab]);
   const [snapshot, setSnapshot] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; undo?: boolean } | null>(null);
   useEffect(() => {
@@ -96,6 +147,9 @@ export default function App() {
   );
   const errors = issues.filter((i) => i.level === 'error').length;
   const warnings = issues.length - errors;
+  const cutText = double
+    ? `Sz.1 ${fmt(assembly.parts[0].analysis.flatLength, 0)} · Sz.2 ${fmt(assembly.parts[1].analysis.flatLength, 0)} mm`
+    : `${fmt(analysis.flatLength)} mm`;
 
   const onSelect = useCallback((i: number | null) => select(i), [select]);
 
@@ -127,192 +181,312 @@ export default function App() {
     setTimeout(() => window.print(), 150);
   };
 
-  return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">BusBar CAD</div>
-        <input
-          className="name-input"
-          value={bar.name}
-          onChange={(e) => update((b) => ({ ...b, name: e.target.value }), false)}
-          aria-label="Nazwa szyny"
-        />
+  const sections = sectionList(customSections, bar.section);
+  const nameField = (
+    <label className="bb-name">
+      <span className="bb-name-cap">Nazwa szyny</span>
+      <input
+        className="bb-name-val"
+        value={bar.name}
+        onChange={(e) => update((b) => ({ ...b, name: e.target.value }), false)}
+        aria-label="Nazwa szyny"
+      />
+    </label>
+  );
+  const sectionPick = (
+    <label className="bb-sect">
+      <span className="bb-name-cap">Przekrój</span>
+      <span className="bb-sect-val">
         <select
-          className="section-select"
           value={sectionKey(bar.section)}
+          aria-label="Przekrój"
           onChange={(e) => {
             if (e.target.value === CUSTOM) {
               askCustomSection(bar.section, (sec) => update((b) => ({ ...b, section: sec })));
               return;
             }
-            const sec = sectionList(customSections, bar.section).find((x) => sectionKey(x) === e.target.value)!;
+            const sec = sections.find((x) => sectionKey(x) === e.target.value)!;
             update((b) => ({ ...b, section: { ...sec } }));
           }}
         >
-          {sectionList(customSections, bar.section).map((sec) => (
+          {sections.map((sec) => (
             <option key={sectionKey(sec)} value={sectionKey(sec)}>
               {sectionLabel(sec)}
             </option>
           ))}
           <option value={CUSTOM}>Inny przekrój…</option>
         </select>
-        <nav className="tabs">
-          <button className={tab === 'model' ? 'on' : ''} onClick={() => setTab('model')}>
-            Model 3D
-          </button>
-          <button className={tab === 'flat' ? 'on' : ''} onClick={() => setTab('flat')}>
-            Rozwinięcie
-          </button>
-          <button className={tab === 'settings' ? 'on' : ''} onClick={() => setTab('settings')}>
-            Ustawienia
-          </button>
-        </nav>
-        <div className="top-actions">
-          <button className="undo-btn act-undo" onClick={undo} disabled={!past.length} title="Cofnij">
-            ↶<span className="btn-text"> Cofnij</span>
-          </button>
-          <button className="undo-btn act-redo" onClick={redo} disabled={!future.length} title="Ponów">
-            ↷<span className="btn-text"> Ponów</span>
-          </button>
-          <button className="wide-only" onClick={() => setModal('new')}>
-            Nowa
-          </button>
-          <button className="wide-only" onClick={() => setModal('projects')}>
+        <Icon name="chevdown" size={20} />
+      </span>
+    </label>
+  );
+  const tabs = (
+    <Seg
+      label="Widok"
+      className={`bb-tabs ${layout === 'tablet' ? '' : 'bb-grow'}`}
+      value={tab}
+      options={TABS.map((t) => ({
+        value: t.value,
+        label: layout === 'phone' ? t.short : t.label,
+        icon: layout === 'phone' ? undefined : <Icon name={t.icon} />,
+      }))}
+      onChange={setTab}
+    />
+  );
+  const history = (
+    <div className="bb-tgroup">
+      <ToolButton icon="undo" label="Cofnij" onClick={undo} disabled={!past.length} />
+      <ToolButton icon="redo" label="Ponów" onClick={redo} disabled={!future.length} />
+    </div>
+  );
+  const tools = (
+    <div className="bb-tgroup">
+      <ToolButton icon="plus" label="Nowa" onClick={() => setModal('new')} />
+      <ToolButton icon="folder" label="Projekty" onClick={() => setModal('projects')} />
+      <ToolButton icon="print" label="Drukuj" onClick={print} />
+    </div>
+  );
+
+  return (
+    <div className={`bb-screen app app--${layout} ${layout === 'phone' ? 'bb-phone' : ''}`}>
+      {layout === 'tablet' ? (
+        <header className="bb-header">
+          <Mark />
+          {nameField}
+          {sectionPick}
+          {tabs}
+          <span className="bb-spacer" />
+          {history}
+          {tools}
+        </header>
+      ) : layout === 'portrait' ? (
+        <header className="bb-header bb-header--stack">
+          <div className="bb-hrow">
+            <Mark />
+            {nameField}
+            {sectionPick}
+            <span className="bb-spacer" />
+            {tools}
+          </div>
+          <div className="bb-hrow">
+            {tabs}
+            {history}
+          </div>
+        </header>
+      ) : (
+        <header className="bb-header bb-header--stack">
+          <div className="bb-hrow">
+            {nameField}
+            {sectionPick}
+            <div className="menu-wrap">
+              <ToolButton icon="more" label="Menu" onClick={() => setMenuOpen((v) => !v)} />
+              {menuOpen && (
+                <div className="top-menu" onClick={() => setMenuOpen(false)}>
+                  <button className="bb-btn bb-btn--secondary bb-btn--block" onClick={() => setModal('new')}>
+                    <Icon name="plus" />
+                    Nowa szyna
+                  </button>
+                  <button className="bb-btn bb-btn--secondary bb-btn--block" onClick={() => setModal('projects')}>
+                    <Icon name="folder" />
+                    Projekty
+                  </button>
+                  <button className="bb-btn bb-btn--secondary bb-btn--block" onClick={print}>
+                    <Icon name="print" />
+                    Drukuj
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="bb-hrow">
+            {tabs}
+            {history}
+          </div>
+        </header>
+      )}
+
+      {!saveOk && (
+        <div className="bb-banner bb-banner--save" role="alert">
+          <Icon name="nosave" size={28} />
+          <span className="bb-banner-text">
+            <strong>Projekt nie jest zapisany.</strong>
+            <span className="bb-banner-sub"> Pamięć urządzenia jest pełna albo zablokowana. Wyeksportuj projekt do pliku.</span>
+          </span>
+          <button className="bb-banner-act" onClick={() => setModal('projects')}>
             Projekty
+            <Icon name="next" />
           </button>
-          <button className="btn-primary wide-only" onClick={print}>
-            🖨 Drukuj
-          </button>
-          <button className="act-menu narrow-only" onClick={() => setMenuOpen((v) => !v)} aria-expanded={menuOpen}>
-            ⋯
-          </button>
-          {menuOpen && (
-            <div className="top-menu" onClick={() => setMenuOpen(false)}>
-              <button onClick={() => setModal('new')}>＋ Nowa szyna</button>
-              <button onClick={() => setModal('projects')}>📁 Projekty</button>
-              <button className="btn-primary" onClick={print}>
-                🖨 Drukuj
-              </button>
-            </div>
-          )}
         </div>
-      </header>
+      )}
 
-      <main className="main">
-        {tab === 'model' && (
-          <div className="model-tab">
-            <Viewer3D
-              bar={bar}
-              assembly={assembly}
-              selected={selected}
-              errorSteps={errorSteps}
-              issues={issues}
-              onSelect={onSelect}
-            />
-            <StepList
-              bar={bar}
-              analysis={analysis}
-              issues={issues}
-              settings={settings}
-              selected={selected}
-              onSelect={onSelect}
-              updateSteps={updateSteps}
-              setDouble={(cfg) => update((b) => ({ ...b, double: cfg }))}
-              onRemoved={(text) => setToast({ text, undo: true })}
-              numpad={openNumpad}
-            />
+      {tab === 'model' && (
+        <div className={`bb-main ${layout === 'tablet' ? '' : 'bb-main--stack'}`}>
+          <Viewer3D
+            bar={bar}
+            assembly={assembly}
+            selected={selected}
+            errorSteps={errorSteps}
+            issues={issues}
+            onSelect={onSelect}
+            foot={
+              double && assembly.arcGaps.length > 0 ? (
+                <span className="vf-gap">
+                  Szczelina w łukach <b>do {fmt(Math.max(...assembly.arcGaps.map((g) => g.gap)))} mm</b>
+                </span>
+              ) : undefined
+            }
+          />
+          <StepList
+            bar={bar}
+            analysis={analysis}
+            issues={issues}
+            settings={settings}
+            selected={selected}
+            onSelect={onSelect}
+            updateSteps={updateSteps}
+            setDouble={(cfg) => update((b) => ({ ...b, double: cfg }))}
+            onRemoved={(text) => setToast({ text, undo: true })}
+            numpad={openNumpad}
+          />
+        </div>
+      )}
+      {tab === 'flat' && (
+        <>
+          {errors > 0 && <StopBanner issues={issues} onShow={goToFirstIssue} />}
+          <div className={`bb-doc flat-doc ${errors ? 'bb-doc--void' : ''}`}>
+            <CutStrip assembly={assembly} bar={bar} cutText={cutText} />
+            {double ? (
+              <>
+                <Notice tone="info">
+                  <b>Podwójna szyna.</b> {doubleNote(assembly)}
+                </Notice>
+                <section className="bb-card">
+                  <h3 className="bb-card-title">
+                    Gotowy układ<span className="bb-card-sub">sprawdź po gięciu i złożeniu</span>
+                  </h3>
+                  <Fit>{(w) => <ProfileView project={bar} assembly={assembly} width={w} maxHeight={360} />}</Fit>
+                </section>
+                {assembly.parts.map((part) => (
+                  <PartDocs key={part.index} part={part} settings={settings} double />
+                ))}
+              </>
+            ) : (
+              <>
+                <div className="bb-docgrid">
+                  <section className="bb-card">
+                    <h3 className="bb-card-title">
+                      Gotowa szyna<span className="bb-card-sub">sprawdź po gięciu</span>
+                    </h3>
+                    <Fit>{(w) => <ProfileView project={bar} assembly={assembly} width={w} maxHeight={320} />}</Fit>
+                  </section>
+                  <section className="bb-card">
+                    <h3 className="bb-card-title">
+                      Rozwinięcie<span className="bb-card-sub">do trasowania i cięcia</span>
+                    </h3>
+                    <Fit min={600}>{(w) => <FlatPatternSvg bar={bar} analysis={analysis} settings={settings} width={w} />}</Fit>
+                  </section>
+                </div>
+                <div className="bb-docgrid2">
+                  <section className="bb-card">
+                    <h3 className="bb-card-title">Gięcia</h3>
+                    <BendTable analysis={analysis} settings={settings} />
+                  </section>
+                  <section className="bb-card">
+                    <h3 className="bb-card-title">Otwory</h3>
+                    <HoleTable bar={bar} analysis={analysis} />
+                  </section>
+                </div>
+              </>
+            )}
           </div>
-        )}
-        {tab === 'flat' && (
-          <div className="flat-tab">
-            {errors > 0 && (
-              <button className="no-production" onClick={goToFirstIssue}>
-                ⛔ NIE DO PRODUKCJI – projekt zawiera błędy. Pokaż błędny krok ›
-              </button>
-            )}
-            {double && (
-              <div className="card double-note">
-                <b>Podwójna szyna.</b> {doubleNote(assembly)}
-              </div>
-            )}
-            <div className="card">
-              <h3>Gotowa szyna – wymiary do sprawdzenia po gięciu</h3>
-              <ProfileView project={bar} assembly={assembly} />
+        </>
+      )}
+      {tab === 'settings' && (
+        <SettingsTab bar={bar} settings={settings} update={update} setSettings={setSettings} numpad={openNumpad} />
+      )}
+
+      <footer className={`bb-status ${layout === 'phone' ? 'bb-status--compact' : ''}`}>
+        <div className="bb-st-cut">
+          <span className="bb-st-cap">Długość cięcia</span>
+          <span className={`bb-st-cutval ${errors ? 'is-void' : ''}`}>{cutText}</span>
+        </div>
+        {layout !== 'phone' && (
+          <>
+            <div className="bb-st-item">
+              <span className="bb-st-cap">Przekrój</span>
+              <span className="bb-st-val">{sectionLabel(bar.section)}</span>
             </div>
-            {assembly.parts.map((part) => (
-              <PartDocs key={part.index} part={part} double={double} settings={settings} />
-            ))}
-          </div>
+            <div className="bb-st-item">
+              <span className="bb-st-cap">Wymiary</span>
+              <span className="bb-st-val">{DIMENSION_MODE_LABEL[bar.dimensionMode]}</span>
+            </div>
+          </>
         )}
-        {tab === 'settings' && (
-          <SettingsTab bar={bar} settings={settings} update={update} setSettings={setSettings} numpad={openNumpad} />
-        )}
-      </main>
-
-      <footer className={`statusbar ${errors ? 'has-errors' : warnings ? 'has-warnings' : ''}`}>
-        <span>
-          Długość cięcia:{' '}
-          {double ? (
-            <>
-              Sz.1 <b>{fmt(assembly.parts[0].analysis.flatLength)}</b> · Sz.2 <b>{fmt(assembly.parts[1].analysis.flatLength)}</b>{' '}
-              mm
-            </>
-          ) : (
-            <b>{fmt(analysis.flatLength)} mm</b>
-          )}
-        </span>
-        <span>{sectionLabel(bar.section)}</span>
-        <span>Wymiary {DIMENSION_MODE_LABEL[bar.dimensionMode]}</span>
         <SyncBadge onOpenSettings={() => setTab('settings')} />
+        <span className="bb-spacer" />
         {issues.length ? (
-          <button className="status-issues" onClick={goToFirstIssue} title="Pokaż krok z problemem">
-            {errors ? `⛔ ${plural(errors, ['błąd', 'błędy', 'błędów'])}` : ''}{' '}
-            {warnings ? `⚠ ${plural(warnings, ['ostrzeżenie', 'ostrzeżenia', 'ostrzeżeń'])}` : ''} ›
+          <button
+            className={`bb-st-check bb-st-check--${errors ? 'danger' : 'warning'}`}
+            onClick={goToFirstIssue}
+            title="Pokaż krok z problemem"
+          >
+            <Icon name={errors ? 'stop' : 'warn'} />
+            {errors ? plural(errors, ['błąd', 'błędy', 'błędów']) : plural(warnings, ['ostrzeżenie', 'ostrzeżenia', 'ostrzeżeń'])}
+            {errors > 0 && warnings > 0 && layout !== 'phone' && (
+              <span className="st-more">+ {plural(warnings, ['ostrzeżenie', 'ostrzeżenia', 'ostrzeżeń'])}</span>
+            )}
+            <Icon name="next" />
           </button>
         ) : (
-          <span className="status-issues">{double ? '✔ Szyny poprawne' : '✔ Szyna poprawna'}</span>
+          <span className="bb-st-check bb-st-check--ok">
+            <Icon name="check" />
+            {double ? 'Szyny poprawne' : 'Szyna poprawna'}
+          </span>
         )}
       </footer>
 
       {toast && (
-        <div className="toast">
-          <span onClick={() => setToast(null)}>{toast.text}</span>
-          {toast.undo && (
-            <button
-              className="toast-undo"
-              onClick={() => {
-                undo();
-                setToast(null);
-              }}
-            >
-              ↶ Cofnij
-            </button>
-          )}
-        </div>
-      )}
-      {notice && (
-        <div className="modal-backdrop">
-          <div className="modal notice">
-            <h2>Sprawdź projekt</h2>
-            <div className="notice-text">{notice}</div>
-            <div className="modal-actions">
-              <button className="btn-primary" onClick={() => setNotice(null)}>
-                Rozumiem
+        <div className="bb-toast-wrap">
+          <div className="bb-toast" role="status">
+            <span className="bb-toast-text" onClick={() => setToast(null)}>
+              {toast.text}
+            </span>
+            {toast.undo && (
+              <button
+                className="bb-toast-act"
+                onClick={() => {
+                  undo();
+                  setToast(null);
+                }}
+              >
+                <Icon name="undo" />
+                Cofnij
               </button>
-            </div>
+            )}
           </div>
         </div>
       )}
-      {!saveOk && (
-        <div className="save-error">
-          ⚠ Nie udało się zapisać projektu w pamięci urządzenia (brak miejsca lub zablokowany zapis). Wyeksportuj projekt do pliku
-          w oknie „Projekty”.
-        </div>
+      {notice && (
+        <Dialog
+          title="Sprawdź projekt"
+          width={620}
+          footer={
+            <>
+              <span className="bb-spacer" />
+              <button className="bb-btn bb-btn--primary bb-btn--lg bb-wide" onClick={() => setNotice(null)}>
+                <Icon name="check" />
+                Rozumiem
+              </button>
+            </>
+          }
+        >
+          <div className="notice-text">{notice}</div>
+        </Dialog>
       )}
       {modal === 'new' && (
         <NewModal
           current={bar.section}
-          sections={sectionList(customSections, bar.section)}
+          sections={sections}
           onAddCustom={addCustomSection}
           numpad={openNumpad}
           settings={settings}
@@ -354,6 +528,96 @@ export default function App() {
   );
 }
 
+/** Measures the available width, so drawings are drawn at their real size (text stays readable). */
+function Fit({ children, min = 280 }: { children: (width: number) => ReactNode; min?: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current!;
+    const ro = new ResizeObserver(() => setW(Math.floor(el.clientWidth)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="fit">
+      {w > 0 && children(Math.max(min, w))}
+    </div>
+  );
+}
+
+function StopBanner({ issues, onShow }: { issues: Issue[]; onShow: () => void }) {
+  const first = issues.find((i) => i.level === 'error');
+  return (
+    <div className="bb-banner bb-banner--stop" role="alert">
+      <Icon name="stop" size={28} />
+      <span className="bb-banner-text">
+        <strong>NIE DO PRODUKCJI</strong>
+        {first && <span className="bb-banner-sub"> {first.message}</span>}
+      </span>
+      <button className="bb-banner-act" onClick={onShow}>
+        Pokaż błędny krok
+        <Icon name="next" />
+      </button>
+    </div>
+  );
+}
+
+function CutStrip({ assembly, bar, cutText }: { assembly: Assembly; bar: Busbar; cutText: string }) {
+  const double = assembly.parts.length > 1;
+  const a = assembly.parts[0].analysis;
+  return (
+    <div className="bb-cutstrip">
+      <div className="bb-cutstrip-main">
+        <span className="bb-tile-label">{double ? 'Długości cięcia' : 'Długość cięcia'}</span>
+        <span className="bb-cutnum">{cutText}</span>
+      </div>
+      <div className="bb-cutstrip-item">
+        <span className="bb-tile-label">Przekrój</span>
+        <span className="bb-cutitem">{sectionLabel(bar.section)}</span>
+      </div>
+      <div className="bb-cutstrip-item">
+        <span className="bb-tile-label">Gięcia</span>
+        <span className="bb-cutitem">{double ? `${a.bends.length} + ${a.bends.length}` : a.bends.length}</span>
+      </div>
+      <div className="bb-cutstrip-item">
+        <span className="bb-tile-label">Otwory</span>
+        <span className="bb-cutitem">{a.holes.length}</span>
+      </div>
+      <div className="bb-cutstrip-item">
+        <span className="bb-tile-label">Wymiary</span>
+        <span className="bb-cutitem">{DIMENSION_MODE_LABEL[bar.dimensionMode]}</span>
+      </div>
+    </div>
+  );
+}
+
+/** Sketch of a corner with the "from – to" points of a dimension mode. */
+function ModeSketch({ mode }: { mode: DimensionMode }) {
+  const t = 16;
+  const R = 16;
+  const x0 = 14;
+  const y0 = 96;
+  const xw = 140;
+  const top = 12;
+  const outer = `M${x0} ${y0}H${xw - R - t}A${R + t} ${R + t} 0 0 0 ${xw} ${y0 - R - t}V${top}H${xw - t}V${y0 - t - R}A${R} ${R} 0 0 1 ${xw - t - R} ${y0 - t}H${x0}Z`;
+  const px = mode === 'outside' ? xw : mode === 'centerline' ? xw - t / 2 : xw - t;
+  const py = mode === 'outside' ? y0 : mode === 'centerline' ? y0 - t / 2 : y0 - t;
+  return (
+    <svg className="bb-svg" width={180} height={120} viewBox="0 0 180 120" aria-hidden="true">
+      <path d={outer} className="bb-bar2d" />
+      <path className="bb-sk-guide" d={`M${x0} ${py}H${px}V${top}`} />
+      <circle className="bb-dim-pt" cx={x0} cy={py} r={6} />
+      <circle className="bb-dim-pt" cx={px} cy={py} r={6} />
+    </svg>
+  );
+}
+
+const MODE_HOW: Record<DimensionMode, string> = {
+  outside: 'od końca do zewnętrznej ściany (ostry narożnik)',
+  centerline: 'od końca do osi grubości szyny',
+  inside: 'od końca do wewnętrznej ściany',
+};
+
 function SettingsTab({
   bar,
   settings,
@@ -368,10 +632,14 @@ function SettingsTab({
   numpad: (r: NumPadRequest) => void;
 }) {
   const cutLength = (m: DimensionMode) => analyze({ ...bar, dimensionMode: m }, settings).flatLength;
+  const firstBendAt = (ref: MachineSettings['bendLineReference']) =>
+    analyze(bar, { ...settings, bendLineReference: ref }).bends[0]?.position;
   const otherRadius = bar.steps.filter((st) => st.kind === 'bend' && st.radius !== settings.radius).length;
-  const num = (key: keyof MachineSettings, title: string, unit: string, min: number, max: number) => (
-    <button
-      className="field"
+  const num = (key: keyof MachineSettings, title: string, unit: string, min: number, max: number, show = fmt) => (
+    <Chip
+      label={title}
+      value={show(settings[key] as number)}
+      unit={unit || undefined}
       onClick={() =>
         numpad({
           title,
@@ -382,89 +650,68 @@ function SettingsTab({
           onOk: (v) => setSettings({ [key]: v } as Partial<MachineSettings>),
         })
       }
-    >
-      <span className="field-label">{title}</span>
-      <span className="field-value">
-        {fmt(settings[key] as number, 3)} {unit}
-      </span>
-    </button>
+    />
   );
+  const refOpt = (k: MachineSettings['bendLineReference'], l: string) => {
+    const at = firstBendAt(k);
+    return { value: k, label: at === undefined ? l : `${l} · ${fmt(at, 0)}` };
+  };
   return (
-    <div className="settings-tab">
-      <ServerSettings />
-      <div className="card">
-        <h3>Projekt</h3>
-        <div className="fields">
-          <label className="field">
-            <span className="field-label">Nr zlecenia</span>
-            <input value={bar.orderNo} onChange={(e) => update((b) => ({ ...b, orderNo: e.target.value }), false)} />
-          </label>
-          <button
-            className="field"
-            onClick={() =>
-              numpad({
-                title: 'Ilość sztuk',
-                unit: 'szt.',
-                min: 1,
-                max: 10000,
-                value: bar.quantity,
-                onOk: (v) => update((b) => ({ ...b, quantity: Math.round(v) })),
-              })
-            }
-          >
-            <span className="field-label">Ilość</span>
-            <span className="field-value">{bar.quantity} szt.</span>
-          </button>
+    <div className="bb-doc bb-settings settings-tab">
+      <section className="bb-card">
+        <h3 className="bb-card-title">Wymiarowanie odcinków</h3>
+        <div className="bb-modes" role="radiogroup" aria-label="Tryb wymiarowania">
+          {(['outside', 'centerline', 'inside'] as DimensionMode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={bar.dimensionMode === m}
+              className={`bb-mode ${bar.dimensionMode === m ? 'is-selected' : ''}`}
+              onClick={() => update((b) => ({ ...b, dimensionMode: m }))}
+            >
+              <ModeSketch mode={m} />
+              <span className="bb-mode-name">{DIMENSION_MODE_LABEL[m].replace(/^po /, 'Po ')}</span>
+              <span className="bb-mode-how">{MODE_HOW[m]}</span>
+              <span className="bb-mode-cut">
+                <span className="bb-tile-label">Cięcie</span>
+                <span className="bb-mode-val">{fmt(cutLength(m), 0)} mm</span>
+              </span>
+            </button>
+          ))}
         </div>
-        <div className="dim-mode">
-          <div className="dim-mode-controls">
-            <span className="field-label">Długości odcinków wymiarowane</span>
-            <div className="seg seg-vertical">
-              {(['outside', 'inside', 'centerline'] as DimensionMode[]).map((m) => (
-                <button
-                  key={m}
-                  className={bar.dimensionMode === m ? 'on' : ''}
-                  onClick={() => update((b) => ({ ...b, dimensionMode: m }))}
-                >
-                  <span>{DIMENSION_MODE_LABEL[m]}</span>
-                  <small>długość cięcia {fmt(cutLength(m))} mm</small>
-                </button>
-              ))}
-            </div>
-            <p className="muted">
-              Zmiana trybu nie zmienia wpisanych liczb – zmienia to, skąd dokąd są mierzone, więc zmienia się wygięta szyna i
-              długość cięcia (podana przy każdym przycisku dla tego projektu).
-            </p>
-          </div>
-          <DimensionModeHelp mode={bar.dimensionMode} />
-        </div>
-      </div>
-      <div className="card">
-        <h3>Maszyna i narzędzia</h3>
-        <p className="muted">
-          K, sprężynowanie, minimalne ramię i długość handlowa działają od razu we wszystkich projektach. Promień narzędzia jest
-          używany dla nowych gięć – w istniejących gięciach zmieniasz go przyciskiem poniżej albo w każdym gięciu. Wartości K i
-          sprężynowania trzeba skalibrować na próbkach z tej maszyny.
+        <p className="bb-p">
+          Zmiana trybu nie zmienia wpisanych liczb. Zmienia to, skąd dokąd są mierzone, więc zmienia się wygięta szyna i długość
+          cięcia (podana przy każdym trybie dla tego projektu).
         </p>
-        <div className="fields">
-          <label className="field">
-            <span className="field-label">Nazwa maszyny (na wydruku)</span>
+        <DimensionModeHelp mode={bar.dimensionMode} />
+      </section>
+      <div className="bb-col">
+        <section className="bb-card">
+          <h3 className="bb-card-title">Maszyna</h3>
+          <label className="bb-chip bb-input">
+            <span className="bb-chip-label">Nazwa (na wydruku)</span>
             <input value={settings.machineName} onChange={(e) => setSettings({ machineName: e.target.value })} />
           </label>
-          {num('radius', 'Promień gięcia (narzędzie)', 'mm', 0, 500)}
-          {num('k', 'Współczynnik K', '', 0, 1)}
-          {num('springbackPct', 'Sprężynowanie', '%', 0, 30)}
-          {num('minLeg', 'Minimalne ramię', 'mm', 0, 500)}
-          {num('maxLength', 'Długość handlowa szyny', 'mm', 100, 12000)}
-        </div>
-        {otherRadius > 0 && (
-          <div className="radius-mismatch">
-            <span>
-              W tym projekcie {plural(otherRadius, ['gięcie ma', 'gięcia mają', 'gięć ma'])} promień inny niż narzędzie (R
-              {fmt(settings.radius)}).
-            </span>
+          <div className="bb-row">
+            <Chip
+              label="Promień narzędzia"
+              value={`R${fmt(settings.radius)}`}
+              className="radius-chip"
+              onClick={() =>
+                numpad({
+                  title: 'Promień gięcia (narzędzie)',
+                  unit: 'mm',
+                  min: 0,
+                  max: 500,
+                  value: settings.radius,
+                  onOk: (v) => setSettings({ radius: v }),
+                })
+              }
+            />
             <button
-              className="btn-primary"
+              className="bb-btn bb-btn--secondary bb-grow radius-all"
+              disabled={!otherRadius}
               onClick={() =>
                 update((b) => ({
                   ...b,
@@ -475,27 +722,34 @@ function SettingsTab({
               Ustaw R{fmt(settings.radius)} we wszystkich gięciach
             </button>
           </div>
-        )}
-        <div className="field-row">
-          <span className="field-label">Pozycja gięcia ustawiana na</span>
-          <div className="seg">
-            {(
-              [
-                ['start', 'początek łuku'],
-                ['center', 'środek łuku'],
-                ['end', 'koniec łuku'],
-              ] as const
-            ).map(([k, l]) => (
-              <button
-                key={k}
-                className={settings.bendLineReference === k ? 'on' : ''}
-                onClick={() => setSettings({ bendLineReference: k })}
-              >
-                {l}
-              </button>
-            ))}
+          {otherRadius > 0 && (
+            <Notice tone="warning">
+              W tym projekcie {plural(otherRadius, ['gięcie ma', 'gięcia mają', 'gięć ma'])} promień inny niż narzędzie.
+            </Notice>
+          )}
+          <div className="bb-row3">
+            {num('k', 'Współczynnik K', '', 0, 1, (v) => fmt(v, 3))}
+            {num('springbackPct', 'Sprężynowanie', '%', 0, 30)}
+            {num('minLeg', 'Minimalne ramię', 'mm', 0, 500)}
           </div>
-        </div>
+          <div className="bb-row">{num('maxLength', 'Długość handlowa', 'mm', 100, 12000)}</div>
+          <span className="bb-field-label">
+            Punkt odniesienia linii gięcia{firstBendAt('center') !== undefined ? ' (G1 od A, mm)' : ''}
+          </span>
+          <Seg
+            label="Punkt odniesienia"
+            block
+            tall
+            value={settings.bendLineReference}
+            options={[refOpt('start', 'Początek łuku'), refOpt('center', 'Środek łuku'), refOpt('end', 'Koniec łuku')]}
+            onChange={(k) => setSettings({ bendLineReference: k })}
+          />
+          <p className="bb-p">
+            K, sprężynowanie, minimalne ramię i długość handlowa działają od razu we wszystkich projektach. Promień narzędzia
+            dotyczy nowych gięć. Wartości K i sprężynowania trzeba skalibrować na próbkach z tej maszyny.
+          </p>
+        </section>
+        <ServerSettings />
       </div>
     </div>
   );
@@ -520,108 +774,141 @@ function NewModal({
 }) {
   const [section, setSection] = useState<Section>(current);
   const [orderNo, setOrderNo] = useState('');
+  const [shape, setShape] = useState(TEMPLATES[0].id);
   // "Inny przekrój" edited right here (no extra dialog).
   const [custom, setCustom] = useState<{ width: number; thickness: number } | null>(null);
   const customError = custom ? sectionError(custom.width, custom.thickness) : null;
   const list = sections.some((x) => sectionKey(x) === sectionKey(section)) ? sections : sectionList(sections, section);
+  const create = () => {
+    const t = TEMPLATES.find((x) => x.id === shape)!;
+    onCreate({ ...newBusbar(section, t.build(settings), `Szyna ${t.name}`), orderNo: orderNo.trim() });
+  };
   return (
-    <div className="modal-backdrop" onPointerDown={onClose}>
-      <div className="modal" onPointerDown={(e) => e.stopPropagation()}>
-        <h2>Nowa szyna</h2>
-        <label className="field order-field">
-          <span className="field-label">Nr zlecenia (opcjonalnie, drukuje się w nagłówku)</span>
-          <input value={orderNo} onChange={(e) => setOrderNo(e.target.value)} placeholder="np. ZL/2026/123" />
-        </label>
-        <div className="muted">1. Wybierz przekrój</div>
-        <div className="section-grid">
-          {list.map((x) => (
-            <button
-              key={sectionKey(x)}
-              className={sectionKey(x) === sectionKey(section) ? 'on' : ''}
-              onClick={() => setSection(x)}
-            >
-              {x.width}×{x.thickness}
-            </button>
-          ))}
-          <button
-            className={`section-other ${custom ? 'on' : ''}`}
-            onClick={() => setCustom(custom ? null : { width: section.width, thickness: section.thickness })}
-          >
-            Inny…
+    <Dialog
+      title="Nowa szyna"
+      width={960}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="bb-spacer" />
+          <button className="bb-btn bb-btn--primary bb-btn--lg bb-wide" disabled={!!custom} onClick={create}>
+            <Icon name="check" />
+            Utwórz szynę
           </button>
-        </div>
-        {custom && (
-          <div className="custom-section">
+        </>
+      }
+    >
+      <div className="bb-newgrid">
+        <div className="bb-col">
+          <label className="bb-chip bb-input">
+            <span className="bb-chip-label">Nr zlecenia (opcjonalnie, drukuje się w nagłówku)</span>
+            <input value={orderNo} onChange={(e) => setOrderNo(e.target.value)} placeholder="np. ZL/2026/123" />
+          </label>
+          <span className="bb-field-label">Przekrój (szerokość × grubość, Cu)</span>
+          <div className="bb-picks">
+            {list.map((x) => (
+              <button
+                key={sectionKey(x)}
+                type="button"
+                className={`bb-pick ${!custom && sectionKey(x) === sectionKey(section) ? 'is-selected' : ''}`}
+                onClick={() => {
+                  setSection(x);
+                  setCustom(null);
+                }}
+              >
+                {fmt(x.width)}×{fmt(x.thickness)}
+              </button>
+            ))}
             <button
-              className="field"
-              onClick={() =>
-                numpad({
-                  title: 'Szerokość szyny',
-                  value: custom.width,
-                  unit: 'mm',
-                  min: SECTION_LIMITS.width[0],
-                  max: SECTION_LIMITS.width[1],
-                  quick: [63, 75, 90, 125, 150, 160, 200],
-                  onOk: (v) => setCustom((c) => (c ? { ...c, width: v } : c)),
-                })
-              }
+              type="button"
+              className={`bb-pick ${custom ? 'is-selected' : ''}`}
+              onClick={() => setCustom(custom ? null : { width: section.width, thickness: section.thickness })}
             >
-              <span className="field-label">Szerokość</span>
-              <span className="field-value">{fmt(custom.width)} mm</span>
+              Inny…
             </button>
-            <span className="custom-x">×</span>
-            <button
-              className="field"
-              onClick={() =>
-                numpad({
-                  title: 'Grubość szyny',
-                  value: custom.thickness,
-                  unit: 'mm',
-                  min: SECTION_LIMITS.thickness[0],
-                  max: SECTION_LIMITS.thickness[1],
-                  quick: [2, 3, 4, 5, 6, 8, 10, 12, 15, 20],
-                  onOk: (v) => setCustom((c) => (c ? { ...c, thickness: v } : c)),
-                })
-              }
-            >
-              <span className="field-label">Grubość</span>
-              <span className="field-value">{fmt(custom.thickness)} mm</span>
-            </button>
-            <button
-              className="btn-primary"
-              disabled={!!customError}
-              onClick={() => {
-                const sec: Section = { ...custom, material: 'Cu' };
-                onAddCustom(sec);
-                setSection(sec);
-                setCustom(null);
-              }}
-            >
-              Użyj Cu {fmt(custom.width)}×{fmt(custom.thickness)}
-            </button>
-            {customError && <div className="section-error">⛔ {customError}</div>}
           </div>
-        )}
-        <div className="muted">2. Wybierz kształt startowy</div>
-        <div className="template-grid">
-          {TEMPLATES.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => onCreate({ ...newBusbar(section, t.build(settings), `Szyna ${t.name}`), orderNo: orderNo.trim() })}
-            >
-              <TemplateIcon id={t.id} />
-              <b>{t.name}</b>
-              <span>{t.description}</span>
-            </button>
-          ))}
+          {custom && (
+            <>
+              <div className="bb-other">
+                <Chip
+                  label="Szerokość"
+                  value={fmt(custom.width)}
+                  unit="mm"
+                  className="bb-grow"
+                  onClick={() =>
+                    numpad({
+                      title: 'Szerokość szyny',
+                      value: custom.width,
+                      unit: 'mm',
+                      min: SECTION_LIMITS.width[0],
+                      max: SECTION_LIMITS.width[1],
+                      quick: [63, 75, 90, 125, 150, 160, 200],
+                      onOk: (v) => setCustom((c) => (c ? { ...c, width: v } : c)),
+                    })
+                  }
+                />
+                <span className="bb-times">×</span>
+                <Chip
+                  label="Grubość"
+                  value={fmt(custom.thickness)}
+                  unit="mm"
+                  state={customError ? 'error' : undefined}
+                  className="bb-grow"
+                  onClick={() =>
+                    numpad({
+                      title: 'Grubość szyny',
+                      value: custom.thickness,
+                      unit: 'mm',
+                      min: SECTION_LIMITS.thickness[0],
+                      max: SECTION_LIMITS.thickness[1],
+                      quick: [2, 3, 4, 5, 6, 8, 10, 12, 15, 20],
+                      onOk: (v) => setCustom((c) => (c ? { ...c, thickness: v } : c)),
+                    })
+                  }
+                />
+              </div>
+              {customError ? (
+                <Notice tone="danger">{customError}</Notice>
+              ) : (
+                <button
+                  className="bb-btn bb-btn--primary"
+                  onClick={() => {
+                    const sec: Section = { ...custom, material: 'Cu' };
+                    onAddCustom(sec);
+                    setSection(sec);
+                    setCustom(null);
+                  }}
+                >
+                  <Icon name="check" />
+                  Użyj Cu {fmt(custom.width)}×{fmt(custom.thickness)}
+                </button>
+              )}
+            </>
+          )}
         </div>
-        <div className="modal-actions">
-          <button className="btn-secondary" onClick={onClose}>
-            Anuluj
-          </button>
+        <div className="bb-col">
+          <span className="bb-field-label">Kształt startowy</span>
+          <div className="bb-shapes">
+            {TEMPLATES.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={`bb-shape ${shape === t.id ? 'is-selected' : ''}`}
+                onClick={() => setShape(t.id)}
+                onDoubleClick={() => {
+                  setShape(t.id);
+                  if (!custom) create();
+                }}
+              >
+                <TemplateIcon id={t.id} />
+                <span className="bb-shape-name">{t.name}</span>
+                <span className="bb-shape-desc">{t.description}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -635,8 +922,8 @@ function TemplateIcon({ id }: { id: string }) {
     offsetL: 'M5 50 H25 L40 38 H70 V8',
   };
   return (
-    <svg viewBox="0 0 100 60" className="tpl-icon">
-      <path d={d[id]} fill="none" stroke="#c87533" strokeWidth="7" strokeLinejoin="round" strokeLinecap="round" />
+    <svg viewBox="0 0 100 60" width={110} height={66} className="tpl-icon" aria-hidden="true">
+      <path d={d[id]} fill="none" stroke="var(--copper)" strokeWidth="9" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
 }
@@ -653,75 +940,39 @@ function ProjectsModal({
   const [projects, setProjects] = useState(() => loadProjects());
   const list = Object.values(projects).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const [q, setQ] = useState('');
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Busbar | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const filtered = list.filter((p) => `${p.name} ${p.orderNo}`.toLowerCase().includes(q.toLowerCase()));
+  const exportCurrent = async () => {
+    const cur = projects[currentId];
+    if (!cur) return;
+    if (IN_FRAME) {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(cur, null, 2));
+        setMsg('Projekt skopiowany do schowka jako JSON.');
+      } catch {
+        setMsg('Nie udało się skopiować. Otwórz aplikację w osobnej karcie.');
+      }
+      return;
+    }
+    const blob = new Blob([JSON.stringify(cur, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${cur.name.replace(/[^\w\-ąćęłńóśźż ]+/gi, '_')}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
   return (
-    <div className="modal-backdrop" onPointerDown={onClose}>
-      <div className="modal" onPointerDown={(e) => e.stopPropagation()}>
-        <h2>Projekty</h2>
-        <input
-          className="search"
-          placeholder="Szukaj po nazwie lub nr zlecenia…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <div className="project-list">
-          {filtered.map((p) => (
-            <div key={p.id} className={`project ${p.id === currentId ? 'current' : ''}`}>
-              <button className="project-open" onClick={() => onOpen(p)}>
-                <b>{p.name}</b>
-                <span>
-                  {sectionLabel(p.section)} ·{' '}
-                  {plural(p.steps.filter((s) => s.kind === 'bend').length, ['gięcie', 'gięcia', 'gięć'])}
-                  {p.orderNo ? ` · zl. ${p.orderNo}` : ''} · {new Date(p.updatedAt).toLocaleString('pl-PL')}
-                </span>
-              </button>
-              <button onClick={() => onOpen(duplicateBar(p))}>Kopiuj</button>
-              <button
-                disabled={p.id === currentId}
-                className={pendingDelete === p.id ? 'danger' : ''}
-                onClick={() => {
-                  if (pendingDelete !== p.id) return setPendingDelete(p.id);
-                  deleteProject(p.id);
-                  setPendingDelete(null);
-                  setProjects(loadProjects());
-                }}
-              >
-                {pendingDelete === p.id ? 'Na pewno?' : '🗑'}
-              </button>
-            </div>
-          ))}
-          {!filtered.length && <p className="muted">Brak projektów.</p>}
-        </div>
-        {msg && <div className="muted">{msg}</div>}
-        <div className="modal-actions">
-          <button
-            className="btn-secondary"
-            onClick={async () => {
-              const cur = projects[currentId];
-              if (!cur) return;
-              if (IN_FRAME) {
-                try {
-                  await navigator.clipboard.writeText(JSON.stringify(cur, null, 2));
-                  setMsg('Projekt skopiowany do schowka jako JSON.');
-                } catch {
-                  setMsg('Nie udało się skopiować – otwórz aplikację w osobnej karcie.');
-                }
-                return;
-              }
-              const blob = new Blob([JSON.stringify(cur, null, 2)], { type: 'application/json' });
-              const a = document.createElement('a');
-              a.href = URL.createObjectURL(blob);
-              a.download = `${cur.name.replace(/[^\w\-ąćęłńóśźż ]+/gi, '_')}.json`;
-              a.click();
-              URL.revokeObjectURL(a.href);
-            }}
-          >
-            {IN_FRAME ? 'Kopiuj bieżący (JSON)' : 'Eksport bieżącego (JSON)'}
-          </button>
-          <label className="btn-secondary file-btn">
-            Import JSON
+    <Dialog
+      title="Projekty"
+      width={1040}
+      onClose={onClose}
+      className="projects-dialog"
+      footer={
+        <>
+          <label className="bb-btn bb-btn--secondary bb-btn--lg file-btn">
+            <Icon name="import" />
+            Import
             <input
               type="file"
               accept="application/json,.json"
@@ -733,7 +984,7 @@ function ProjectsModal({
                 try {
                   data = JSON.parse(await f.text());
                 } catch {
-                  setMsg('Nie udało się odczytać pliku – to nie jest plik JSON.');
+                  setMsg('Nie udało się odczytać pliku. To nie jest plik JSON.');
                   return;
                 }
                 const res = sanitizeBusbar(data, useStore.getState().settings);
@@ -746,19 +997,84 @@ function ProjectsModal({
               }}
             />
           </label>
-          <button className="btn-secondary" onClick={onClose}>
-            Zamknij
+          <button className="bb-btn bb-btn--secondary bb-btn--lg" onClick={() => void exportCurrent()}>
+            <Icon name="export" />
+            {IN_FRAME ? 'Kopiuj bieżący (JSON)' : 'Eksport bieżącego'}
           </button>
-        </div>
+          {msg && <span className="foot-msg">{msg}</span>}
+        </>
+      }
+    >
+      <label className="bb-search">
+        <Icon name="search" />
+        <input placeholder="Szukaj: nazwa albo nr zlecenia" value={q} onChange={(e) => setQ(e.target.value)} />
+      </label>
+      <div className="bb-projlist">
+        {filtered.map((p) => (
+          <div key={p.id} className={`bb-proj ${p.id === currentId ? 'is-current' : ''}`}>
+            <button type="button" className="bb-proj-open" onClick={() => onOpen(p)}>
+              <span className="bb-proj-name">{p.name}</span>
+              <span className="bb-proj-meta">
+                {sectionLabel(p.section)} ·{' '}
+                {plural(p.steps.filter((s) => s.kind === 'bend').length, ['gięcie', 'gięcia', 'gięć'])}
+              </span>
+              <span className="bb-proj-meta">{p.orderNo || '—'}</span>
+              <span className="bb-proj-meta">{new Date(p.updatedAt).toLocaleDateString('pl-PL')}</span>
+            </button>
+            <button type="button" className="bb-btn bb-btn--secondary" onClick={() => onOpen(duplicateBar(p))}>
+              <Icon name="copy" />
+              Kopiuj
+            </button>
+            <button
+              type="button"
+              className="bb-btn bb-btn--danger-quiet bb-proj-del"
+              disabled={p.id === currentId}
+              title={p.id === currentId ? 'Otwartego projektu nie można usunąć' : undefined}
+              onClick={() => setPendingDelete(p)}
+            >
+              <Icon name="trash" />
+              Usuń
+            </button>
+          </div>
+        ))}
+        {!filtered.length && <p className="bb-p">Brak projektów.</p>}
       </div>
-    </div>
+      {pendingDelete && (
+        <div className="bb-scrim bb-scrim--inner">
+          <div className="bb-dialog" role="alertdialog" style={{ width: 520 }}>
+            <div className="bb-dialog-body">
+              <h2 className="bb-dialog-title">Usunąć projekt?</h2>
+              <p className="bb-p">
+                <b>{pendingDelete.name}</b> zniknie z tego tabletu (na serwerze trafi do kosza).
+              </p>
+            </div>
+            <div className="bb-dialog-foot bb-foot-split">
+              <button className="bb-btn bb-btn--secondary bb-btn--lg" onClick={() => setPendingDelete(null)}>
+                Nie, zostaw
+              </button>
+              <button
+                className="bb-btn bb-btn--danger bb-btn--lg"
+                onClick={() => {
+                  deleteProject(pendingDelete.id);
+                  setPendingDelete(null);
+                  setProjects(loadProjects());
+                }}
+              >
+                <Icon name="trash" />
+                Tak, usuń
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Dialog>
   );
 }
 
 /** Instructions for a double bar: separate bending with the same tool, gap in the arcs. */
 function doubleNote(assembly: Assembly): string {
   const worst = assembly.arcGaps.reduce<{ no: number; gap: number } | null>((m, g) => (!m || g.gap > m.gap ? g : m), null);
-  const gapText = worst ? ` W łukach szyny nie przylegają – największa szczelina ${fmt(worst.gap)} mm (gięcie ${worst.no}).` : '';
+  const gapText = worst ? ` W łukach szyny nie przylegają: największa szczelina ${fmt(worst.gap)} mm (gięcie ${worst.no}).` : '';
   return (
     'Każdą szynę tnij i gnij osobno według jej własnej tabeli, tym samym narzędziem. Na prostych odcinkach szyny ' +
     'przylegają (lub mają zadany odstęp), a otwory wypadają na sobie.' +
@@ -766,49 +1082,35 @@ function doubleNote(assembly: Assembly): string {
   );
 }
 
-function PartDocs({ part, double, settings }: { part: BarPart; double: boolean; settings: MachineSettings }) {
+function PartDocs({ part, settings, double }: { part: BarPart; settings: MachineSettings; double: boolean }) {
   const { bar, analysis } = part;
   return (
-    <section className="part-block">
-      <div className="flat-head">
-        {double && <div className={`part-title part-${part.index}`}>{part.label}</div>}
+    <section className={`bb-card part-block part-${part.index}`}>
+      <h3 className="bb-card-title">
+        {double ? part.label : 'Rozwinięcie'}
+        <span className="bb-card-sub">cięcie {fmt(analysis.flatLength)} mm</span>
+      </h3>
+      <Fit min={600}>{(w) => <FlatPatternSvg bar={bar} analysis={analysis} settings={settings} width={w} />}</Fit>
+      <div className="bb-docgrid2">
         <div>
-          <div className="muted">Długość cięcia</div>
-          <div className="flat-length">{fmt(analysis.flatLength)} mm</div>
-        </div>
-        <div>
-          <div className="muted">Przekrój</div>
-          <div className="flat-val">{sectionLabel(bar.section)}</div>
-        </div>
-        <div>
-          <div className="muted">Gięcia / otwory</div>
-          <div className="flat-val">
-            {analysis.bends.length} / {analysis.holes.length}
-          </div>
-        </div>
-        <div>
-          <div className="muted">Wymiary ramion</div>
-          <div className="flat-val">{DIMENSION_MODE_LABEL[bar.dimensionMode]}</div>
-        </div>
-      </div>
-      <div className="card">
-        <FlatPatternSvg bar={bar} analysis={analysis} settings={settings} />
-      </div>
-      <div className="card">
-        <h3>Tabela gięć dla operatora{double ? ` – ${part.label}` : ''}</h3>
-        <div className="table-scroll">
+          <h4 className="sub-title">Gięcia</h4>
           <BendTable analysis={analysis} settings={settings} />
         </div>
-        {analysis.holes.length > 0 && (
-          <>
-            <h3 className="mt">Otwory</h3>
-            <div className="table-scroll">
-              <HoleTable bar={bar} analysis={analysis} />
-            </div>
-          </>
-        )}
+        <div>
+          <h4 className="sub-title">Otwory</h4>
+          <HoleTable bar={bar} analysis={analysis} />
+        </div>
       </div>
     </section>
+  );
+}
+
+function A4Meta({ label, value, big }: { label: string; value: ReactNode; big?: boolean }) {
+  return (
+    <div className={`bb-tile ${big ? 'bb-tile--big' : ''}`}>
+      <span className="bb-tile-label">{label}</span>
+      <span className="bb-tile-value">{value}</span>
+    </div>
   );
 }
 
@@ -826,77 +1128,129 @@ function PrintSheet({
   issues: Issue[];
 }) {
   const double = assembly.parts.length > 1;
+  const p1 = assembly.parts[0];
+  const errors = issues.some((i) => i.level === 'error');
+  const printed = new Date().toLocaleDateString('pl-PL');
+  const footer = (page: number) => (
+    <div className="bb-a4-foot">
+      <span>
+        Wymiary {DIMENSION_MODE_LABEL[bar.dimensionMode]} · koniec A do zderzaka · R{fmt(settings.radius)} · K{' '}
+        {fmt(settings.k, 3)} · sprężynowanie {fmt(settings.springbackPct)}% · {settings.machineName}
+      </span>
+      <span>
+        Wydrukowano {printed} · strona {page}/{assembly.parts.length}
+      </span>
+    </div>
+  );
   return (
-    <div className={`print-sheet ${double ? 'print-double' : ''}`}>
-      {issues.some((i) => i.level === 'error') && (
-        <div className="no-production">⛔ NIE DO PRODUKCJI – projekt zawiera błędy</div>
-      )}
-      <table className="print-header">
-        <tbody>
-          <tr>
-            <td rowSpan={2} className="ph-title">
-              {bar.name}
-              {double && <div className="ph-sub">podwójna szyna</div>}
-            </td>
-            <td>
-              <span>Nr zlecenia</span>
-              <b>{bar.orderNo || '—'}</b>
-            </td>
-            <td>
-              <span>Przekrój</span>
-              <b>{sectionLabel(bar.section)}</b>
-            </td>
-            <td>
-              <span>{double ? 'Ilość kompletów' : 'Ilość'}</span>
-              <b>{bar.quantity} szt.</b>
-            </td>
-          </tr>
-          <tr>
-            <td>
-              <span>Długość cięcia{double ? ' (szyna 1 / szyna 2)' : ''}</span>
-              <b className="ph-len">{assembly.parts.map((p) => fmt(p.analysis.flatLength)).join(' / ')} mm</b>
-            </td>
-            <td>
-              <span>Maszyna</span>
-              <b>{settings.machineName}</b>
-            </td>
-            <td>
-              <span>Data</span>
-              <b>{new Date(bar.updatedAt).toLocaleDateString('pl-PL')}</b>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div className="print-row">
-        <figure className="print-profile">
-          <figcaption>Gotowa szyna – wymiary do sprawdzenia po gięciu (widok z przodu)</figcaption>
-          <ProfileView project={bar} assembly={assembly} width={900} maxHeight={420} />
-        </figure>
-        {snapshot && <img src={snapshot} className="print-3d" alt="Widok 3D" />}
-      </div>
-      <div className="print-notes">
-        <div>
-          Wymiary ramion: <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b> · K {settings.k} · szynę wkładaj końcem A do zderzaka
-        </div>
-        {double && <div>Podwójna szyna: {doubleNote(assembly)}</div>}
-        {issues.length > 0 && (
-          <div className="print-issues">
-            {issues.map((i, k) => (
-              <div key={k}>
-                {i.level === 'error' ? '⛔' : '⚠'} {i.message}
-              </div>
-            ))}
+    <div className="print-sheet" data-theme="light">
+      <div className={`bb-a4 ${errors ? 'bb-doc--void' : ''}`}>
+        {errors && (
+          <div className="bb-banner bb-banner--stop print-stop">
+            <Icon name="stop" size={28} />
+            <span className="bb-banner-text">
+              <strong>NIE DO PRODUKCJI</strong>
+              <span className="bb-banner-sub"> {issues.find((i) => i.level === 'error')?.message}</span>
+            </span>
           </div>
         )}
-      </div>
-      {assembly.parts.map((part) => (
-        <div key={part.index} className="print-part">
-          <h3>Rozwinięcie{double ? ` – ${part.label}` : ''}</h3>
-          <FlatPatternSvg bar={part.bar} analysis={part.analysis} settings={settings} width={1000} />
-          <div className="print-tables">
-            <BendTable analysis={part.analysis} settings={settings} />
-            <HoleTable bar={part.bar} analysis={part.analysis} />
+        <div className="bb-a4-head">
+          <div className="bb-a4-title">
+            <Mark size={28} />
+            <div>
+              <b>{bar.name}</b>
+              <span className="bb-a4-sub">Karta operatora giętarki{double ? ' · podwójna szyna' : ''}</span>
+            </div>
           </div>
+          <div className="bb-a4-meta">
+            {bar.orderNo && <A4Meta label="Zlecenie" value={bar.orderNo} />}
+            <A4Meta label="Przekrój" value={sectionLabel(bar.section)} />
+            <A4Meta label="Gięcia / otwory" value={`${p1.analysis.bends.length} / ${p1.analysis.holes.length}`} />
+            <A4Meta
+              big
+              label={double ? 'Długość cięcia Sz.1 / Sz.2' : 'Długość cięcia'}
+              value={`${assembly.parts.map((p) => fmt(p.analysis.flatLength)).join(' / ')} mm`}
+            />
+          </div>
+        </div>
+        <div className="bb-a4-grid">
+          <div className="bb-a4-col">
+            <section className="bb-card">
+              <h3 className="bb-card-title">
+                {double ? 'Gotowy układ (sprawdź po gięciu)' : 'Gotowa szyna (sprawdź po gięciu)'}
+              </h3>
+              <ProfileView project={bar} assembly={assembly} width={420} maxHeight={300} />
+            </section>
+            {snapshot && (
+              <section className="bb-card print-3d-card">
+                <h3 className="bb-card-title">Widok 3D</h3>
+                <img src={snapshot} className="print-3d" alt="Widok 3D" />
+              </section>
+            )}
+          </div>
+          <div className="bb-a4-col">
+            <section className="bb-card">
+              <h3 className="bb-card-title">Rozwinięcie{double ? ` – ${p1.label}` : ''}</h3>
+              <FlatPatternSvg bar={p1.bar} analysis={p1.analysis} settings={settings} width={600} />
+            </section>
+            <section className="bb-card">
+              <h3 className="bb-card-title">Gięcia{double ? ` – ${p1.label}` : ''}</h3>
+              <BendTable analysis={p1.analysis} settings={settings} print />
+            </section>
+            {p1.analysis.holes.length > 0 && (
+              <section className="bb-card">
+                <h3 className="bb-card-title">Otwory</h3>
+                <HoleTable bar={p1.bar} analysis={p1.analysis} print />
+              </section>
+            )}
+            {(double || issues.length > 0) && (
+              <div className="print-notes">
+                {double && <div>Podwójna szyna: {doubleNote(assembly)}</div>}
+                {issues.map((i, k) => (
+                  <div key={k} className={i.level === 'error' ? 'print-error' : ''}>
+                    {i.level === 'error' ? 'Błąd: ' : 'Uwaga: '}
+                    {i.message}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        {footer(1)}
+      </div>
+      {assembly.parts.slice(1).map((part) => (
+        <div key={part.index} className={`bb-a4 ${errors ? 'bb-doc--void' : ''}`}>
+          <div className="bb-a4-head">
+            <div className="bb-a4-title">
+              <Mark size={28} />
+              <div>
+                <b>
+                  {bar.name} – {part.label}
+                </b>
+                <span className="bb-a4-sub">Karta operatora giętarki · podwójna szyna</span>
+              </div>
+            </div>
+            <div className="bb-a4-meta">
+              <A4Meta label="Gięcia / otwory" value={`${part.analysis.bends.length} / ${part.analysis.holes.length}`} />
+              <A4Meta big label="Długość cięcia" value={`${fmt(part.analysis.flatLength)} mm`} />
+            </div>
+          </div>
+          <section className="bb-card">
+            <h3 className="bb-card-title">Rozwinięcie – {part.label}</h3>
+            <FlatPatternSvg bar={part.bar} analysis={part.analysis} settings={settings} width={1050} />
+          </section>
+          <section className="bb-card">
+            <h3 className="bb-card-title">Gięcia – {part.label}</h3>
+            <BendTable analysis={part.analysis} settings={settings} print />
+          </section>
+          {part.analysis.holes.length > 0 && (
+            <section className="bb-card">
+              <h3 className="bb-card-title">Otwory</h3>
+              <HoleTable bar={part.bar} analysis={part.analysis} print />
+            </section>
+          )}
+          <span className="bb-spacer" />
+          {footer(part.index)}
         </div>
       ))}
     </div>

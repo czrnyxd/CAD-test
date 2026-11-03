@@ -353,7 +353,7 @@ export function bendOrientations(bends: { direction: Direction }[]): BendOrienta
 export const ORIENTATION_LABEL: Record<BendOrientation, string> = {
   first: 'ułóż wg kierunku',
   same: 'bez obracania',
-  flip: '↻ obróć szynę',
+  flip: 'obróć szynę',
 };
 
 /** Polish plural form: plural(2, ['błąd', 'błędy', 'błędów']) → '2 błędy'. */

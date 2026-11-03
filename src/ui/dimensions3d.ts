@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import type { LegDimension } from '../core/geometry';
 
-const DIM_COLOR = '#1f5fbf';
-const REF_COLOR = '#e8590c';
-const CONSTRUCTION_COLOR = '#7b8794';
+const DIM_COLOR = '#12171d';
+const REF_COLOR = '#f08c00';
+const CONSTRUCTION_COLOR = '#505c68';
 
 /**
  * Draw a leg dimension like on a technical drawing, in the front plane of the bar (w = +W/2):
@@ -24,7 +24,7 @@ export function addLegDimension(
   const d1 = from.clone().addScaledVector(d.outward, k);
   const d2 = from.clone().addScaledVector(d.dir, d.length).addScaledVector(d.outward, k);
   const overshoot = opts.spacing * 0.25;
-  const color = opts.highlight ? '#1677ff' : DIM_COLOR;
+  const color = opts.highlight ? '#0b5cd5' : DIM_COLOR;
 
   const lineMat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true });
   const segs = [

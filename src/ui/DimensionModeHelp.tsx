@@ -48,15 +48,15 @@ export function DimensionModeHelp({ mode }: { mode: DimensionMode }) {
       <svg viewBox="0 0 360 300" role="img" aria-label={caption}>
         <defs>
           <marker id="dh-arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="#1f5fbf" />
+            <path d="M0,0 L10,5 L0,10 z" fill="#12171d" />
           </marker>
         </defs>
-        <path d={barPath} fill="#e7b48a" stroke="#6b3d16" strokeWidth="2" />
+        <path d={barPath} fill="#f6e6d8" stroke="#12171d" strokeWidth="2" />
         {/* centre line of the bar */}
         <path
           d={`M${x0},${outY - T / 2} H${outX - T / 2 - (ri + T / 2)} A${ri + T / 2},${ri + T / 2} 0 0 0 ${outX - T / 2},${outY - T / 2 - (ri + T / 2)} V${y0}`}
           fill="none"
-          stroke="#6b3d16"
+          stroke="#12171d"
           strokeWidth="1"
           strokeDasharray="8 3 2 3"
           opacity="0.7"
@@ -65,19 +65,19 @@ export function DimensionModeHelp({ mode }: { mode: DimensionMode }) {
         <path
           d={`M${tanH.x},${tanH.y} H${refX} V${tanV.y}`}
           fill="none"
-          stroke="#7b8794"
+          stroke="#505c68"
           strokeWidth="1.5"
           strokeDasharray="5 4"
         />
         {/* horizontal leg dimension */}
-        <line x1={x0} y1={outY + 4} x2={x0} y2={dimY + 8} stroke="#1f5fbf" strokeWidth="1" />
-        <line x1={refX} y1={refY + 4} x2={refX} y2={dimY + 8} stroke="#1f5fbf" strokeWidth="1" />
+        <line x1={x0} y1={outY + 4} x2={x0} y2={dimY + 8} stroke="#12171d" strokeWidth="1" />
+        <line x1={refX} y1={refY + 4} x2={refX} y2={dimY + 8} stroke="#12171d" strokeWidth="1" />
         <line
           x1={x0}
           y1={dimY}
           x2={refX}
           y2={dimY}
-          stroke="#1f5fbf"
+          stroke="#12171d"
           strokeWidth="1.5"
           markerStart="url(#dh-arr)"
           markerEnd="url(#dh-arr)"
@@ -86,14 +86,14 @@ export function DimensionModeHelp({ mode }: { mode: DimensionMode }) {
           ramię 1
         </text>
         {/* vertical leg dimension */}
-        <line x1={outX + 4} y1={y0} x2={dimX + 8} y2={y0} stroke="#1f5fbf" strokeWidth="1" />
-        <line x1={refX + 4} y1={refY} x2={dimX + 8} y2={refY} stroke="#1f5fbf" strokeWidth="1" />
+        <line x1={outX + 4} y1={y0} x2={dimX + 8} y2={y0} stroke="#12171d" strokeWidth="1" />
+        <line x1={refX + 4} y1={refY} x2={dimX + 8} y2={refY} stroke="#12171d" strokeWidth="1" />
         <line
           x1={dimX}
           y1={y0}
           x2={dimX}
           y2={refY}
-          stroke="#1f5fbf"
+          stroke="#12171d"
           strokeWidth="1.5"
           markerStart="url(#dh-arr)"
           markerEnd="url(#dh-arr)"
@@ -102,9 +102,9 @@ export function DimensionModeHelp({ mode }: { mode: DimensionMode }) {
           ramię 2
         </text>
         {/* reference points */}
-        <circle cx={x0} cy={refY} r="5" fill="#e8590c" />
-        <circle cx={refX} cy={refY} r="6" fill="#e8590c" />
-        <circle cx={refX} cy={y0} r="5" fill="#e8590c" />
+        <circle cx={x0} cy={refY} r="5" fill="#f08c00" />
+        <circle cx={refX} cy={refY} r="6" fill="#f08c00" />
+        <circle cx={refX} cy={y0} r="5" fill="#f08c00" />
         <text x={x0 + 4} y={outY + 18} className="dh-small">
           koniec A
         </text>

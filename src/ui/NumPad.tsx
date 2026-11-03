@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Icon } from './Icon';
 
 export interface NumPadRequest {
   title: string;
@@ -12,31 +13,36 @@ export interface NumPadRequest {
   onNext?: () => void;
   /** Label of the next field, shown on that button. */
   nextLabel?: string;
-  /** Explanatory drawing above the keys. */
+  /** Explanatory drawing next to the value. */
   figure?: 'bend-angle';
-  /** 'side': on landscape tablets dock the keypad to the right, so the 3D model stays visible. */
+  /** 'side': on landscape tablets the keypad takes the place of the step panel, so the 3D model stays visible. */
   placement?: 'center' | 'side';
 }
 
+/** Polish number text: decimal comma, real minus sign. */
+const show = (v: number) => String(v).replace('.', ',').replace('-', '−');
+const fmtLimit = (v: number) => show(Math.round(v * 100) / 100);
+
 export function NumPad({ req, onClose }: { req: NumPadRequest; onClose: () => void }) {
-  const [text, setText] = useState(String(req.value).replace('.', ','));
+  const [text, setText] = useState(show(req.value));
   const [fresh, setFresh] = useState(true); // first key press replaces the value
 
-  const value = parseFloat(text.replace(',', '.'));
+  const value = parseFloat(text.replace(',', '.').replace('−', '-'));
   const valid =
     Number.isFinite(value) && (req.min === undefined || value >= req.min) && (req.max === undefined || value <= req.max);
+  const signed = req.min !== undefined && req.min < 0;
 
   const press = (k: string) => {
     setText((t) => {
       const base = fresh ? '' : t;
       if (k === '⌫') return fresh ? '' : t.slice(0, -1);
       if (k === '±') {
-        if (fresh) return '-';
-        return t.startsWith('-') ? t.slice(1) : `-${t}`;
+        if (fresh) return '−';
+        return t.startsWith('−') ? t.slice(1) : `−${t}`;
       }
       if (k === ',' && base.includes(',')) return base;
-      if (k === ',' && (base === '' || base === '-')) return `${base}0,`;
-      if (base.replace(',', '').length >= 7) return base;
+      if (k === ',' && (base === '' || base === '−')) return `${base}0,`;
+      if (base.replace(/[,−]/g, '').length >= 7) return base;
       return base + k;
     });
     setFresh(false);
@@ -60,6 +66,7 @@ export function NumPad({ req, onClose }: { req: NumPadRequest; onClose: () => vo
     const onKey = (e: KeyboardEvent) => {
       if (/^[0-9]$/.test(e.key)) press(e.key);
       else if (e.key === ',' || e.key === '.') press(',');
+      else if (e.key === '-' && signed) press('±');
       else if (e.key === 'Backspace') press('⌫');
       else if (e.key === 'Enter') {
         e.preventDefault();
@@ -70,87 +77,113 @@ export function NumPad({ req, onClose }: { req: NumPadRequest; onClose: () => vo
     return () => window.removeEventListener('keydown', onKey);
   });
 
+  const unit = req.unit === '°' ? '°' : req.unit ? ` ${req.unit}` : '';
   const range =
     req.min !== undefined && req.max !== undefined
-      ? `zakres ${req.min}–${req.max} ${req.unit}`
+      ? `Zakres ${fmtLimit(req.min)}–${fmtLimit(req.max)}${unit}`
       : req.min !== undefined
-        ? `min. ${req.min} ${req.unit}`
+        ? `Minimum ${fmtLimit(req.min)}${unit}`
         : '';
+  const keys = ['7', '8', '9', '4', '5', '6', '1', '2', '3', ...(signed ? ['±', '0', ','] : [',', '0', '⌫'])];
 
   return (
-    // Tapping beside the keypad does not close it (easy to do with gloves); only Cancel / OK / Esc do.
-    <div className={`modal-backdrop numpad-backdrop ${req.placement === 'side' ? 'side' : ''}`}>
-      <div className="numpad" onPointerDown={(e) => e.stopPropagation()}>
-        <div className="numpad-title">{req.title}</div>
-        <div className={`numpad-display ${valid ? '' : 'invalid'} ${fresh ? 'fresh' : ''}`}>
-          {text || '0'} <span className="unit">{req.unit}</span>
+    // Tapping beside the keypad does not close it (easy to do with gloves); only Anuluj / OK / Esc do.
+    <div className={`numpad-backdrop ${req.placement === 'side' ? 'side' : ''}`}>
+      <aside className="bb-keypad numpad" aria-label={req.title} onPointerDown={(e) => e.stopPropagation()}>
+        <div className="bb-kp-title">{req.title}</div>
+        <div className={`bb-kp-display ${!valid && !fresh ? 'is-bad' : ''} ${fresh ? 'is-fresh' : ''}`}>
+          <div className="bb-kp-readout">
+            <span className="bb-kp-value">
+              {text || ' '}
+              <span className="bb-kp-unit">{unit}</span>
+            </span>
+            <span className="bb-kp-range">{range}</span>
+          </div>
+          {req.figure === 'bend-angle' && <AngleSketch angle={Number.isFinite(value) ? value : 0} />}
         </div>
-        <div className="numpad-range">{range}</div>
-        {req.figure === 'bend-angle' && <BendAngleFigure angle={Number.isFinite(value) ? value : 0} />}
         {req.quick && (
-          <div className="numpad-quick">
+          <div className="bb-kp-quick">
             {req.quick.map((q) => (
-              <button key={q} onClick={() => ok(q)}>
-                {q}
+              <button key={q} type="button" className={`bb-kp-q ${value === q ? 'is-selected' : ''}`} onClick={() => ok(q)}>
+                {show(q)}
                 {req.unit === '°' ? '°' : ''}
               </button>
             ))}
           </div>
         )}
-        <div className="numpad-keys">
-          {['7', '8', '9', '4', '5', '6', '1', '2', '3', ',', '0', '⌫'].map((k) => (
-            <button key={k} onClick={() => press(k)} className={k === '⌫' ? 'key-back' : ''}>
-              {k}
+        <div className="bb-kp-keys">
+          {keys.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => press(k)}
+              className={`bb-key ${k === '⌫' || k === '±' ? 'bb-key--fn' : ''}`}
+              aria-label={k === '⌫' ? 'Usuń cyfrę' : k === '±' ? 'Zmień znak' : undefined}
+            >
+              {k === '⌫' ? <Icon name="back" size={28} /> : k}
             </button>
           ))}
         </div>
-        {req.min !== undefined && req.min < 0 && (
-          <button className="numpad-sign" onClick={() => press('±')}>
-            ± zmień znak
+        {signed && (
+          <button type="button" className="bb-key bb-key--fn bb-key--wide" onClick={() => press('⌫')}>
+            <Icon name="back" size={28} />
+            Usuń cyfrę
           </button>
         )}
-        <div className="numpad-actions">
-          <button className="btn-secondary" onClick={onClose}>
+        <div className="bb-kp-actions">
+          <button type="button" className="bb-btn bb-btn--secondary bb-btn--lg bb-kp-cancel" onClick={onClose}>
             Anuluj
           </button>
-          <button className="btn-primary" disabled={!valid} onClick={() => ok()}>
+          <button
+            type="button"
+            className={`bb-btn bb-btn--${req.onNext ? 'secondary' : 'primary'} bb-btn--lg bb-grow`}
+            disabled={!valid}
+            onClick={() => ok()}
+          >
             OK
           </button>
         </div>
         {req.onNext && (
-          <button className="btn-primary numpad-next" disabled={!valid} onClick={() => ok(value, true)}>
-            OK i dalej › <small>{req.nextLabel}</small>
+          <button
+            type="button"
+            className="bb-btn bb-btn--primary bb-btn--lg bb-btn--block numpad-next"
+            disabled={!valid}
+            onClick={() => ok(value, true)}
+          >
+            OK i dalej
+            <Icon name="next" />
+            <span className="bb-kp-next">{req.nextLabel}</span>
           </button>
         )}
-      </div>
+      </aside>
     </div>
   );
 }
 
 /** Shows what the bend angle means: how far the bar turns away from straight (0° = straight). */
-function BendAngleFigure({ angle }: { angle: number }) {
-  const a = Math.max(0, Math.min(179, angle));
-  const rad = (a * Math.PI) / 180;
-  const cx = 150;
-  const cy = 80;
-  const L = 110;
-  const end = { x: cx + L * Math.cos(rad), y: cy - L * Math.sin(rad) };
-  const r = 34;
-  const arcEnd = { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
+function AngleSketch({ angle }: { angle: number }) {
+  const a = (Math.max(0, Math.min(170, angle)) * Math.PI) / 180;
+  const S = 88;
+  const r = S * 0.62;
+  const ox = S * 0.14;
+  const oy = S * 0.72;
+  const ax = ox + S * 0.4;
+  const x2 = ax + Math.cos(a) * r * 0.75;
+  const y2 = oy - Math.sin(a) * r * 0.75;
+  const rr = S * 0.2;
   return (
-    <figure className="angle-figure">
-      <svg viewBox="0 0 300 100" aria-hidden="true">
-        <line x1={30} y1={cy} x2={cx} y2={cy} stroke="#c87533" strokeWidth="10" strokeLinecap="round" />
-        <line x1={cx} y1={cy} x2={cx + L} y2={cy} stroke="#9aa5b1" strokeWidth="2" strokeDasharray="6 5" />
-        <line x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="#c87533" strokeWidth="10" strokeLinecap="round" />
-        {a > 0 && (
-          <path d={`M${cx + r},${cy} A${r},${r} 0 0 0 ${arcEnd.x},${arcEnd.y}`} fill="none" stroke="#1677ff" strokeWidth="3" />
-        )}
-        <text x={cx + r + 8} y={cy - 8} className="angle-figure-text">
-          {Math.round(a)}°
-        </text>
-      </svg>
-      <figcaption>O ile odchylić szynę od prostej (0° = prosto, 90° = narożnik prosty).</figcaption>
-    </figure>
+    <svg
+      className="bb-svg angle-sketch"
+      width={S}
+      height={S}
+      viewBox={`0 0 ${S} ${S}`}
+      aria-label="O ile odchylić szynę od prostej"
+    >
+      <line className="bb-sk-ghost" x1={ax} y1={oy} x2={S - 2} y2={oy} />
+      {angle > 0 && (
+        <path className="bb-sk-arc" d={`M${ax + rr} ${oy}A${rr} ${rr} 0 0 0 ${ax + Math.cos(a) * rr} ${oy - Math.sin(a) * rr}`} />
+      )}
+      <path className="bb-sk-bar" d={`M${ox} ${oy}L${ax} ${oy}L${x2} ${y2}`} />
+    </svg>
   );
 }

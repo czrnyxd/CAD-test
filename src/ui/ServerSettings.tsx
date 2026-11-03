@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { connect, disconnect, syncNow, useSync, type SyncState } from '../sync';
+import { Notice } from './controls';
+import { Icon } from './Icon';
 
 const STATE_LABEL: Record<SyncState, string> = {
   off: 'Nie połączono – projekty są tylko na tym urządzeniu.',
@@ -19,33 +21,32 @@ export function ServerSettings() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
+  const tone =
+    state === 'ok' ? 'ok' : state === 'auth' || state === 'error' ? 'danger' : state === 'offline' ? 'warning' : 'info';
   return (
-    <div className="card server-card">
-      <h3>Serwer – zapis projektów</h3>
-      <p className={`server-state server-${state}`}>
+    <section className="bb-card server-card">
+      <h3 className="bb-card-title">Serwer – zapis projektów</h3>
+      <Notice tone={tone}>
         {state === 'error' && message ? message : STATE_LABEL[state]}
-        {lastSync && state !== 'off' && (
-          <span className="muted"> Ostatnia synchronizacja: {new Date(lastSync).toLocaleTimeString('pl-PL')}</span>
-        )}
-      </p>
-      <div className="fields">
-        <label className="field">
-          <span className="field-label">Adres serwera (puste = ten, z którego otwarto aplikację)</span>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://cad.twojadomena.pl" inputMode="url" />
-        </label>
-        <label className="field">
-          <span className="field-label">Kod dostępu</span>
-          <input value={token} onChange={(e) => setToken(e.target.value)} type="password" autoComplete="off" />
-        </label>
-      </div>
-      <div className="modal-actions server-actions">
+        {lastSync && state !== 'off' && ` Ostatnia synchronizacja ${new Date(lastSync).toLocaleTimeString('pl-PL')}.`}
+      </Notice>
+      <label className="bb-chip bb-input">
+        <span className="bb-chip-label">Adres serwera (puste = ten, z którego otwarto aplikację)</span>
+        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://cad.twojadomena.pl" inputMode="url" />
+      </label>
+      <label className="bb-chip bb-input">
+        <span className="bb-chip-label">Kod dostępu</span>
+        <input value={token} onChange={(e) => setToken(e.target.value)} type="password" autoComplete="off" />
+      </label>
+      <div className="bb-row server-actions">
         {config && (
           <>
-            <button className="btn-secondary" onClick={() => void syncNow()}>
-              ⟳ Synchronizuj teraz
+            <button className="bb-btn bb-btn--secondary" onClick={() => void syncNow()}>
+              <Icon name="rotate" />
+              Synchronizuj
             </button>
             <button
-              className="btn-secondary"
+              className="bb-btn bb-btn--secondary"
               onClick={() => {
                 disconnect();
                 setResult('Odłączono. Projekty zostają na tym urządzeniu.');
@@ -56,7 +57,7 @@ export function ServerSettings() {
           </>
         )}
         <button
-          className="btn-primary"
+          className="bb-btn bb-btn--primary bb-grow"
           disabled={busy || !token.trim()}
           onClick={async () => {
             setBusy(true);
@@ -68,12 +69,12 @@ export function ServerSettings() {
           {config ? 'Zapisz i połącz ponownie' : 'Połącz'}
         </button>
       </div>
-      {result && <p className="muted">{result}</p>}
-      <p className="muted">
-        Projekty i tak zapisują się najpierw na tym urządzeniu, więc aplikacja działa bez internetu. Serwer przechowuje poprzednie
+      {result && <p className="bb-p">{result}</p>}
+      <p className="bb-p">
+        Projekty zapisują się najpierw na tym urządzeniu, więc aplikacja działa bez internetu. Serwer przechowuje poprzednie
         wersje każdego projektu i usunięte projekty (kosz).
       </p>
-    </div>
+    </section>
   );
 }
 
@@ -81,19 +82,24 @@ export function ServerSettings() {
 export function SyncBadge({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { state, lastSync } = useSync();
   if (state === 'off') return null;
-  const text =
+  const time = lastSync ? new Date(lastSync).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }) : '';
+  const [icon, text] =
     state === 'ok'
-      ? `☁ Zapisano na serwerze${lastSync ? ` ${new Date(lastSync).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}` : ''}`
+      ? (['cloud', `Na serwerze ${time}`] as const)
       : state === 'syncing'
-        ? '☁ Zapisywanie…'
+        ? (['cloud', 'Zapisywanie…'] as const)
         : state === 'offline'
-          ? '⚠ Offline – zapis lokalny'
+          ? (['offline', 'Offline, zapis lokalny'] as const)
           : state === 'auth' || state === 'detected'
-            ? '☁ Podaj kod dostępu'
-            : '⚠ Błąd serwera';
+            ? (['cloud', 'Podaj kod dostępu'] as const)
+            : (['warn', 'Błąd serwera'] as const);
   return (
-    <button className={`sync-badge sync-${state}`} onClick={onOpenSettings} title="Ustawienia serwera">
-      {text}
+    <button className={`bb-st-item sync-badge sync-${state}`} onClick={onOpenSettings}>
+      <span className="bb-st-cap">Zapis</span>
+      <span className="sync-val">
+        <Icon name={icon} size={20} />
+        {text}
+      </span>
     </button>
   );
 }

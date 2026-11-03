@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
@@ -7,6 +7,7 @@ import type { Assembly } from '../core/assembly';
 import { dirVector, keyPoints, legDimensions } from '../core/geometry';
 import { DIMENSION_MODE_LABEL, DIRECTION_ARROW, type Busbar } from '../core/model';
 import { addLegDimension } from './dimensions3d';
+import { Icon } from './Icon';
 import { addLights, buildPartObjects, fitOrtho, type BarObject, type ViewName } from './scene';
 
 interface Props {
@@ -17,6 +18,8 @@ interface Props {
   errorSteps: Set<number>;
   issues: Issue[];
   onSelect: (i: number | null) => void;
+  /** Extra text in the footer under the model. */
+  foot?: ReactNode;
 }
 
 interface Ctx {
@@ -32,11 +35,17 @@ interface Ctx {
   render: () => void;
 }
 
+/** Kind of a snap point – shown by the marker shape (and in the legend). */
+export type SnapKind = 'corner' | 'hole' | 'dim' | 'end';
+
 /** A point the measuring tool snaps to, with a description shown to the user. */
 interface SnapPoint {
   p: THREE.Vector3;
   label: string;
+  kind: SnapKind;
 }
+
+const KIND_RANK: Record<SnapKind, number> = { corner: 0, end: 1, hole: 2, dim: 3 };
 
 /** Merge points closer than `eps` (step boundaries share their corners). */
 function dedupe(pts: SnapPoint[], eps = 0.5): SnapPoint[] {
@@ -45,7 +54,10 @@ function dedupe(pts: SnapPoint[], eps = 0.5): SnapPoint[] {
     const same = out.find((o) => o.p.distanceTo(q.p) < eps);
     if (!same) out.push(q);
     // A corner that is also a dimension reference point is described as the latter.
-    else if (q.label.startsWith('punkt wymiaru')) same.label = q.label;
+    else if (KIND_RANK[q.kind] > KIND_RANK[same.kind]) {
+      same.label = q.label;
+      same.kind = q.kind;
+    }
   }
   return out;
 }
@@ -67,19 +79,60 @@ function disposeGroup(g: THREE.Group) {
   g.clear();
 }
 
-export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect }: Props) {
+/** SVG markup of one snap marker (constant size on screen, shape by kind). */
+function markerSvg(kind: SnapKind, x: number, y: number, r: number, cls: string): string {
+  const t = `transform="translate(${x.toFixed(1)} ${y.toFixed(1)})"`;
+  switch (kind) {
+    case 'corner':
+      return `<rect class="mk mk-corner ${cls}" ${t} x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" rx="1.5"/>`;
+    case 'dim':
+      return `<path class="mk mk-dim ${cls}" ${t} d="M0 ${-r * 1.3}L${r * 1.3} 0L0 ${r * 1.3}L${-r * 1.3} 0Z"/>`;
+    case 'hole':
+      return `<g class="mk mk-hole ${cls}" ${t}><circle r="${r}"/><path d="M${-r} 0H${r}M0 ${-r}V${r}"/></g>`;
+    default:
+      return `<circle class="mk mk-end ${cls}" ${t} r="${r}"/>`;
+  }
+}
+
+const MARKER_R = 6.5; // ≈ 13 px markers
+const SNAP_RADIUS = 60; // px – how far from the finger a tap still snaps
+const LOUPE = 150; // px – loupe diameter
+const LOUPE_ZOOM = 3;
+const HOLD_MS = 300;
+/** With more points than this, points hidden behind the bar are not drawn at all. */
+const MANY_POINTS = 80;
+/** Distance (mm) in front of a point the occlusion ray starts from – farther than any bar. */
+const FAR = 100000;
+
+const VIEWS: [ViewName, string][] = [
+  ['iso', 'ISO'],
+  ['front', 'Przód'],
+  ['top', 'Góra'],
+  ['side', 'Bok'],
+];
+
+export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect, foot }: Props) {
   const part1 = assembly.parts[0];
   const { path, analysis } = part1;
   const bbox = assembly.bbox;
   const hostRef = useRef<HTMLDivElement>(null);
+  const markRef = useRef<SVGSVGElement>(null);
+  const loupeRef = useRef<HTMLDivElement>(null);
+  const loupeSvgRef = useRef<SVGSVGElement>(null);
+  const loupeTextRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<Ctx | null>(null);
   const [measure, setMeasure] = useState(false);
   const [showDims, setShowDims] = useState(true);
+  const [view, setViewName] = useState<ViewName | null>('iso');
   const [points, setPoints] = useState<SnapPoint[]>([]);
   /** Snap candidates near the last tap, to switch the last point to a neighbouring one. */
   const [cand, setCand] = useState<{ list: SnapPoint[]; idx: number } | null>(null);
   const fittedFor = useRef<string | null>(null);
   const keyPts = useRef<SnapPoint[]>([]);
+  /** Which snap points are hidden behind the bar (recomputed when the view stops moving). */
+  const occluded = useRef<boolean[]>([]);
+  /** Marker state read by the render loop (refs, so rendering does not need React). */
+  const markState = useRef<{ on: boolean; chosen: SnapPoint[]; hot: SnapPoint | null }>({ on: false, chosen: [], hot: null });
 
   // A measurement belongs to the shape it was taken on – clear it when the bar changes.
   useEffect(() => {
@@ -87,20 +140,78 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     setCand(null);
   }, [assembly]);
 
+  /** Screen position (px, relative to the canvas) of a 3D point. */
+  const toScreen = (p: THREE.Vector3) => {
+    const c = ctxRef.current!;
+    const el = c.renderer.domElement;
+    const v = p.clone().project(c.camera);
+    return { x: ((v.x + 1) / 2) * el.clientWidth, y: ((1 - v.y) / 2) * el.clientHeight, z: v.z };
+  };
+
+  /** Redraw the snap markers (SVG on top of the canvas). Called after every render. */
+  const drawMarkers = () => {
+    const svg = markRef.current;
+    const c = ctxRef.current;
+    if (!svg || !c) return;
+    const st = markState.current;
+    if (!st.on) {
+      svg.innerHTML = '';
+      return;
+    }
+    const pts = keyPts.current;
+    const many = pts.length > MANY_POINTS;
+    let html = '';
+    pts.forEach((q, i) => {
+      const hidden = occluded.current[i];
+      if (hidden && many) return;
+      const s = toScreen(q.p);
+      html += markerSvg(q.kind, s.x, s.y, MARKER_R, hidden ? 'is-behind' : '');
+    });
+    for (const q of st.chosen) {
+      const s = toScreen(q.p);
+      html += markerSvg(q.kind, s.x, s.y, MARKER_R * 1.6, 'is-chosen');
+    }
+    if (st.hot) {
+      const s = toScreen(st.hot.p);
+      html += `<circle class="mk-hot" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${MARKER_R * 2.6}"/>`;
+    }
+    svg.innerHTML = html;
+  };
+  const drawMarkersRef = useRef(drawMarkers);
+  drawMarkersRef.current = drawMarkers;
+
+  /** Find which snap points are behind the bar, by casting a ray from each point towards the camera. */
+  const updateOcclusion = () => {
+    const c = ctxRef.current;
+    if (!c) return;
+    const meshes = c.barObjs.map((o) => o.mesh);
+    const toCam = new THREE.Vector3(0, 0, 1).applyQuaternion(c.camera.quaternion);
+    const ray = new THREE.Raycaster();
+    occluded.current = keyPts.current.map((q) => {
+      // From the camera side towards the point (front faces are hit), hidden when something is in front of it.
+      ray.set(q.p.clone().addScaledVector(toCam, FAR), toCam.clone().negate());
+      const hit = ray.intersectObjects(meshes, false)[0];
+      return !!hit && hit.distance < FAR - 0.3;
+    });
+  };
+  const occlusionRef = useRef(updateOcclusion);
+  occlusionRef.current = updateOcclusion;
+
   // Init renderer once.
   useEffect(() => {
     const host = hostRef.current!;
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor('#e9edf1');
-    host.appendChild(renderer.domElement);
+    renderer.setClearColor('#eef1f4');
+    renderer.domElement.className = 'viewer-gl';
+    host.prepend(renderer.domElement);
     const labelRenderer = new CSS2DRenderer();
     labelRenderer.domElement.className = 'label-layer';
-    host.appendChild(labelRenderer.domElement);
+    renderer.domElement.after(labelRenderer.domElement);
 
     const scene = new THREE.Scene();
     addLights(scene);
-    const grid = new THREE.GridHelper(4000, 80, '#b8c2cc', '#d3d9df');
+    const grid = new THREE.GridHelper(4000, 80, '#b5bec8', '#d5dbe1');
     grid.position.y = -0.01;
     scene.add(grid);
     const overlay = new THREE.Group();
@@ -116,8 +227,20 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     const render = () => {
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
+      drawMarkersRef.current();
     };
-    controls.addEventListener('change', render);
+    let moved = false;
+    controls.addEventListener('change', () => {
+      moved = true;
+      render();
+    });
+    controls.addEventListener('start', () => (moved = false));
+    controls.addEventListener('end', () => {
+      if (!moved) return;
+      setViewName(null);
+      occlusionRef.current();
+      drawMarkersRef.current();
+    });
 
     const resize = () => {
       const w = host.clientWidth;
@@ -136,6 +259,7 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     ro.observe(host);
 
     ctxRef.current = { renderer, labelRenderer, scene, camera, controls, barObjs: [], overlay, grid, measureGroup, render };
+    fittedFor.current = null; // a new renderer has a fresh camera: fit it to the part
     resize();
     return () => {
       ro.disconnect();
@@ -144,7 +268,8 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
       disposeGroup(overlay);
       disposeGroup(measureGroup);
       renderer.dispose();
-      host.innerHTML = '';
+      renderer.domElement.remove();
+      labelRenderer.domElement.remove();
       ctxRef.current = null;
     };
   }, []);
@@ -154,12 +279,14 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     const c = ctxRef.current;
     if (!c) return;
     const el = hostRef.current!;
-    const view = v ?? {
+    const dirView = v ?? {
       dir: c.camera.position.clone().sub(c.controls.target).normalize(),
       up: c.camera.up.clone(),
     };
-    fitOrtho(c.camera, bbox, view, el.clientWidth / Math.max(1, el.clientHeight), c.controls.target);
+    fitOrtho(c.camera, bbox, dirView, el.clientWidth / Math.max(1, el.clientHeight), c.controls.target);
     c.controls.update();
+    if (v) setViewName(v);
+    updateOcclusion();
     c.render();
   };
 
@@ -195,20 +322,24 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
         const name = assembly.parts.length > 1 ? ` (szyna ${part.index})` : '';
         const all = keyPoints(part.path, W, T);
         const ends = all.slice(-2);
-        const pts: SnapPoint[] = all.slice(0, -2).map((p) => ({ p, label: `narożnik${name}` }));
-        ends.forEach((p, k) => pts.push({ p, label: `środek końca ${k === 0 ? 'A' : 'B'}${name}` }));
+        const pts: SnapPoint[] = all.slice(0, -2).map((p) => ({ p, label: `Narożnik${name}`, kind: 'corner' }));
+        ends.forEach((p, k) => pts.push({ p, label: `Środek końca ${k === 0 ? 'A' : 'B'}${name}`, kind: 'end' }));
         for (const h of part.analysis.holes) {
           const f = part.path.samples[part.path.stepRanges[h.stepIndex][0]];
           const c0 = f.p.clone().addScaledVector(f.t, h.posOnStraight).addScaledVector(f.w, h.offset);
           for (const side of [1, -1])
-            pts.push({ p: c0.clone().addScaledVector(f.n, (side * T) / 2), label: `środek otworu O${h.no}${name}` });
+            pts.push({
+              p: c0.clone().addScaledVector(f.n, (side * T) / 2),
+              label: `Środek otworu O${h.no}${name}`,
+              kind: 'hole',
+            });
         }
         // Reference points of the leg dimensions (sharp corners), on both side faces.
         if (part.index === 1) {
           for (const d of legDimensions(part.bar, part.path)) {
             for (const z of [W / 2, -W / 2]) {
-              pts.push({ p: d.from.clone().add(new THREE.Vector3(0, 0, z)), label: 'punkt wymiaru (ostry narożnik)' });
-              pts.push({ p: d.to.clone().add(new THREE.Vector3(0, 0, z)), label: 'punkt wymiaru (ostry narożnik)' });
+              for (const p of [d.from, d.to])
+                pts.push({ p: p.clone().add(new THREE.Vector3(0, 0, z)), label: 'Punkt wymiaru (ostry narożnik)', kind: 'dim' });
             }
           }
         }
@@ -268,7 +399,7 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
           .addScaledVector(f.t, h.posOnStraight)
           .addScaledVector(f.w, h.offset)
           .addScaledVector(f.n, bar.section.thickness / 2);
-        l.center.set(-0.3, 1.9); // beside and above the hole, clear of the leg dimension label
+        l.center.set(-0.3, 1.6); // beside and above the hole, clear of the leg dimension label
         c.overlay.add(l);
       }
     }
@@ -278,7 +409,7 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
       const msg = issues.find((x) => x.level === 'error' && x.stepIndex === step)?.message;
       if (!range || !msg) continue;
       const mid = path.samples[Math.round((range[0] + range[1]) / 2)];
-      const l = label(`⛔ ${msg.replace(/^Szyna \d: /, '')}`, 'lbl-error');
+      const l = label(msg.replace(/^Szyna \d: /, ''), 'lbl-error');
       l.position.copy(mid.p);
       l.center.set(0.5, -0.4);
       c.overlay.add(l);
@@ -289,7 +420,7 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
         const f = path.samples[path.stepRanges[selected][0]];
         const dir = dirVector(f, s.direction);
         const len = Math.max(60, bar.section.width * 2);
-        const arrow = new THREE.ArrowHelper(dir.clone().normalize(), f.p, len, '#1677ff', len * 0.3, len * 0.18);
+        const arrow = new THREE.ArrowHelper(dir.clone().normalize(), f.p, len, '#0b5cd5', len * 0.3, len * 0.18);
         arrow.traverse((o) => {
           const m = (o as THREE.Mesh).material as THREE.Material | undefined;
           if (m) m.depthTest = false;
@@ -311,84 +442,185 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     } else if (outOfView()) {
       setView();
     }
+    updateOcclusion();
     c.render();
   }, [bar, assembly, selected, errorSteps, issues, showDims]);
 
-  // Measurement visuals.
+  // Measurement visuals: the line and its value (the point markers are drawn as SVG on top).
   useEffect(() => {
     const c = ctxRef.current;
     if (!c) return;
     disposeGroup(c.measureGroup);
-    if (measure) {
-      const size = Math.max(2, bar.section.thickness * 0.35);
-      const sg = new THREE.SphereGeometry(size, 10, 8);
-      const kp = new THREE.InstancedMesh(
-        sg,
-        new THREE.MeshBasicMaterial({ color: '#1677ff', transparent: true, opacity: 0.45, depthTest: false }),
-        keyPts.current.length,
-      );
-      keyPts.current.forEach(({ p }, i) => kp.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p.x, p.y, p.z)));
-      kp.renderOrder = 10;
-      c.measureGroup.add(kp);
-      for (const { p } of points) {
-        const m = new THREE.Mesh(
-          new THREE.SphereGeometry(size * 1.6, 14, 10),
-          new THREE.MeshBasicMaterial({ color: '#e8590c', depthTest: false }),
-        );
-        m.position.copy(p);
-        m.renderOrder = 11;
-        c.measureGroup.add(m);
-      }
-      if (points.length === 2) {
-        const g = new THREE.BufferGeometry().setFromPoints(points.map((q) => q.p));
-        const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: '#e8590c', depthTest: false }));
-        line.renderOrder = 11;
-        c.measureGroup.add(line);
-        const l = label(`${fmt(points[0].p.distanceTo(points[1].p))} mm`, 'lbl-measure');
-        l.position.copy(points[0].p).lerp(points[1].p, 0.5);
-        c.measureGroup.add(l);
-      }
+    markState.current.on = measure;
+    markState.current.chosen = measure ? points : [];
+    if (measure && points.length === 2) {
+      const g = new THREE.BufferGeometry().setFromPoints(points.map((q) => q.p));
+      const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: '#0b5cd5', depthTest: false }));
+      line.renderOrder = 11;
+      c.measureGroup.add(line);
+      const l = label(`${fmt(points[0].p.distanceTo(points[1].p))} mm`, 'lbl-measure');
+      l.position.copy(points[0].p).lerp(points[1].p, 0.5);
+      c.measureGroup.add(l);
     }
     c.render();
-  }, [measure, points, assembly, bar.section.thickness]);
+  }, [measure, points, assembly]);
 
-  // Tap handling (tap = pointer down/up without moving).
+  // Pointer handling: tap selects a step (or a measuring point); in measuring mode a long press opens the loupe.
   useEffect(() => {
     const c = ctxRef.current;
     if (!c) return;
     const el = c.renderer.domElement;
-    let down: { x: number; y: number } | null = null;
+    let down: { x: number; y: number; id: number } | null = null;
+    let holdTimer = 0;
+    let loupe: { renderer: THREE.WebGLRenderer; cam: THREE.OrthographicCamera } | null = null;
+    let looping = false;
+    let holding = false;
+    let pick: SnapPoint | null = null;
+    let finger = { x: 0, y: 0, w: 1, h: 1 };
+    const pointers = new Set<number>();
+
+    const local = (e: PointerEvent) => {
+      const rect = el.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top, w: rect.width, h: rect.height };
+    };
+
+    /** Snap points near (x, y) on screen, nearest first; points in front win over hidden ones. */
+    const nearby = (x: number, y: number, radius: number) =>
+      keyPts.current
+        .map((q, i) => {
+          const s = toScreen(q.p);
+          return { q, d: Math.hypot(s.x - x, s.y - y), behind: occluded.current[i] ? 12 : 0, depth: s.z };
+        })
+        .filter((o) => o.d < radius)
+        .sort((a, b) => a.d + a.behind - (b.d + b.behind) || a.depth - b.depth)
+        .map((o) => o.q);
+
+    const choose = (list: SnapPoint[]) => {
+      if (!list.length) return;
+      setPoints((pts) => (pts.length >= 2 ? [list[0]] : [...pts, list[0]]));
+      setCand({ list, idx: 0 });
+    };
+
+    // ---- loupe: the same scene rendered by a second, small renderer, zoomed around the finger ----
+    const loupeEl = loupeRef.current!;
+    const ensureLoupe = () => {
+      if (loupe) return loupe;
+      const r = new THREE.WebGLRenderer({ antialias: true });
+      r.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      r.setClearColor('#eef1f4');
+      r.setSize(LOUPE, LOUPE);
+      r.domElement.className = 'loupe-gl';
+      loupeEl.prepend(r.domElement);
+      loupe = { renderer: r, cam: new THREE.OrthographicCamera() };
+      return loupe;
+    };
+    const drawLoupe = () => {
+      looping = false;
+      const l = loupe;
+      if (!l || !holding) return;
+      const { x, y, w, h } = finger;
+      const src = LOUPE / LOUPE_ZOOM;
+      l.cam.copy(c.camera);
+      l.cam.setViewOffset(w, h, x - src / 2, y - src / 2, src, src);
+      l.cam.updateProjectionMatrix();
+      l.renderer.render(c.scene, l.cam);
+      // Above the finger, clamped to the view; below it when there is no room above.
+      let top = y - LOUPE - 70;
+      if (top < 4) top = Math.min(h - LOUPE - 4, y + 70);
+      const left = Math.max(4, Math.min(w - LOUPE - 4, x - LOUPE / 2));
+      loupeEl.style.transform = `translate(${left}px, ${top}px)`;
+      // Snap markers inside the loupe and the point that will be chosen on release.
+      pick = nearby(x, y, SNAP_RADIUS / 1.5)[0] ?? null;
+      markState.current.hot = pick;
+      const map = (p: THREE.Vector3) => {
+        const s = toScreen(p);
+        return { x: (s.x - x) * LOUPE_ZOOM + LOUPE / 2, y: (s.y - y) * LOUPE_ZOOM + LOUPE / 2 };
+      };
+      let html = '';
+      keyPts.current.forEach((q, i) => {
+        const s = map(q.p);
+        if (s.x < -10 || s.y < -10 || s.x > LOUPE + 10 || s.y > LOUPE + 10) return;
+        html += markerSvg(q.kind, s.x, s.y, MARKER_R, occluded.current[i] ? 'is-behind' : '');
+      });
+      if (pick) {
+        const s = map(pick.p);
+        html += `<circle class="mk-hot" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${MARKER_R * 2.4}"/>`;
+      }
+      const m = LOUPE / 2;
+      html += `<path class="loupe-cross" d="M${m - 14} ${m}h28M${m} ${m - 14}v28"/>`;
+      loupeSvgRef.current!.innerHTML = html;
+      loupeTextRef.current!.textContent = pick ? pick.label : 'Przesuń palec do punktu';
+      drawMarkersRef.current();
+    };
+    const scheduleLoupe = () => {
+      if (looping) return;
+      looping = true;
+      requestAnimationFrame(drawLoupe);
+    };
+    const openLoupe = () => {
+      holding = true;
+      c.controls.enabled = false; // the finger now aims instead of rotating the model
+      ensureLoupe();
+      loupeEl.classList.add('is-open');
+      scheduleLoupe();
+    };
+    const closeLoupe = (commit: boolean) => {
+      if (!holding) return;
+      holding = false;
+      loupeEl.classList.remove('is-open');
+      c.controls.enabled = true;
+      markState.current.hot = null;
+      const chosen = pick;
+      pick = null;
+      if (commit && chosen) choose([chosen, ...nearby(finger.x, finger.y, SNAP_RADIUS).filter((q) => q !== chosen)]);
+      c.render();
+    };
+
     const onDown = (e: PointerEvent) => {
-      down = { x: e.clientX, y: e.clientY };
+      pointers.add(e.pointerId);
+      if (pointers.size > 1) {
+        // A second finger (zoom / pan) cancels aiming.
+        clearTimeout(holdTimer);
+        closeLoupe(false);
+        down = null;
+        return;
+      }
+      down = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      if (measure) {
+        finger = local(e);
+        holdTimer = window.setTimeout(openLoupe, HOLD_MS);
+      }
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!down || e.pointerId !== down.id) return;
+      if (holding) {
+        finger = local(e);
+        scheduleLoupe();
+        return;
+      }
+      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) clearTimeout(holdTimer); // it is a rotation
     };
     const onUp = (e: PointerEvent) => {
-      if (!down) return;
+      pointers.delete(e.pointerId);
+      clearTimeout(holdTimer);
+      if (holding) {
+        finger = local(e);
+        closeLoupe(true);
+        down = null;
+        return;
+      }
+      if (!down || e.pointerId !== down.id) return;
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       down = null;
       if (moved > 8) return;
-      const rect = el.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const { x, y, w, h } = local(e);
       if (measure) {
         // Snap to the nearest key point on screen; remember the other ones nearby.
-        const near = keyPts.current
-          .map((q) => {
-            const v = q.p.clone().project(c.camera);
-            const sx = ((v.x + 1) / 2) * rect.width;
-            const sy = ((1 - v.y) / 2) * rect.height;
-            return { q, d: Math.hypot(sx - x, sy - y), depth: v.z };
-          })
-          .filter((o) => o.d < 60)
-          .sort((a, b) => a.d - b.d || a.depth - b.depth)
-          .map((o) => o.q);
-        if (near.length) {
-          setPoints((pts) => (pts.length >= 2 ? [near[0]] : [...pts, near[0]]));
-          setCand({ list: near, idx: 0 });
-        }
+        choose(nearby(x, y, SNAP_RADIUS));
         return;
       }
       const ray = new THREE.Raycaster();
-      ray.setFromCamera(new THREE.Vector2((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1), c.camera);
+      ray.setFromCamera(new THREE.Vector2((x / w) * 2 - 1, -(y / h) * 2 + 1), c.camera);
       let best: { dist: number; step: number } | null = null;
       for (const o of c.barObjs) {
         const hit = ray.intersectObject(o.mesh)[0];
@@ -398,11 +630,33 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
       }
       onSelect(best ? best.step : null);
     };
+    const onCancel = (e: PointerEvent) => {
+      pointers.delete(e.pointerId);
+      clearTimeout(holdTimer);
+      closeLoupe(false);
+      down = null;
+    };
+    // Long press must not open the browser's context menu while measuring.
+    const noMenu = (e: Event) => {
+      if (measure) e.preventDefault();
+    };
     el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onCancel);
+    el.addEventListener('contextmenu', noMenu);
     return () => {
+      clearTimeout(holdTimer);
+      closeLoupe(false);
       el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onCancel);
+      el.removeEventListener('contextmenu', noMenu);
+      if (loupe) {
+        loupe.renderer.dispose();
+        loupe.renderer.domElement.remove();
+      }
     };
   }, [measure, onSelect]);
 
@@ -417,73 +671,143 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
   };
 
   return (
-    <div className={`viewer ${measure ? 'measuring' : ''}`}>
-      <div className="viewer-canvas" ref={hostRef} />
-      <div className="viewer-toolbar">
-        <button onClick={() => setView('iso')}>ISO</button>
-        <button onClick={() => setView('front')}>Przód</button>
-        <button onClick={() => setView('top')}>Góra</button>
-        <button onClick={() => setView('side')}>Bok</button>
-        <button onClick={() => setView()} title="Dopasuj widok">
-          ⤢
+    <div className={`bb-viewport viewer ${measure ? 'measuring' : ''}`}>
+      <div className="bb-viewbar">
+        <div className="bb-seg" role="radiogroup" aria-label="Widok modelu">
+          {VIEWS.map(([v, l]) => (
+            <button
+              key={v}
+              role="radio"
+              aria-checked={view === v}
+              className={`bb-seg-opt ${view === v ? 'is-selected' : ''}`}
+              onClick={() => setView(v)}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+        <button className="bb-btn bb-btn--secondary vb-fit" onClick={() => setView()}>
+          <Icon name="fit" />
+          <span className="vb-text">Dopasuj</span>
         </button>
-        <span className="sep" />
-        <button className={showDims ? 'on' : ''} onClick={() => setShowDims((v) => !v)}>
+        <span className="bb-spacer" />
+        <button className={`bb-toggle ${showDims ? 'is-on' : ''}`} aria-pressed={showDims} onClick={() => setShowDims((v) => !v)}>
+          <Icon name="dims" />
           Wymiary
+          <span className="bb-toggle-state">{showDims ? 'wł.' : 'wył.'}</span>
         </button>
         <button
-          className={measure ? 'on accent' : ''}
+          className={`bb-toggle ${measure ? 'is-on' : ''}`}
+          aria-pressed={measure}
           onClick={() => {
             setMeasure((m) => !m);
             setPoints([]);
             setCand(null);
           }}
         >
-          📏 Zmierz
+          <Icon name="ruler" />
+          Zmierz
+          <span className="bb-toggle-state">{measure ? 'wł.' : 'wył.'}</span>
         </button>
       </div>
-      <div className="viewer-info">
-        Gabaryty: {fmt(size.x)} × {fmt(size.y)} × {fmt(size.z)} mm · wymiary ramion{' '}
-        <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b>
-      </div>
-      {measure && (
-        <div className="measure-panel">
-          {points.length === 0 && <div>Dotknij pierwszego punktu (narożnik, środek końca, otwór, punkt wymiaru)</div>}
-          {points.length === 1 && <div>Dotknij drugiego punktu</div>}
-          {points.length > 0 && (
-            <div className="measure-points">
-              {points.map((q, k) => (
-                <div key={k}>
-                  <b>{k + 1}.</b> {q.label}
-                </div>
-              ))}
-            </div>
-          )}
-          {cand && cand.list.length > 1 && points.length > 0 && (
-            <button className="measure-next" onClick={nextCandidate}>
-              ↻ Inny punkt ({cand.idx + 1}/{cand.list.length})
-            </button>
-          )}
-          {d && (
-            <>
-              <div className="measure-big">{fmt(d.length())} mm</div>
-              <div>
-                ΔX {fmt(Math.abs(d.x))} · ΔY {fmt(Math.abs(d.y))} · ΔZ {fmt(Math.abs(d.z))}
-              </div>
-            </>
-          )}
-          {points.length > 0 && (
-            <button
-              onClick={() => {
-                setPoints([]);
-                setCand(null);
-              }}
-            >
-              Wyczyść
-            </button>
-          )}
+      <div className="bb-viewcanvas" ref={hostRef}>
+        <svg className="snap-layer" ref={markRef} aria-hidden="true" />
+        <div className="loupe" ref={loupeRef} aria-hidden="true">
+          <svg className="loupe-marks" ref={loupeSvgRef} width={LOUPE} height={LOUPE} />
+          <div className="loupe-text" ref={loupeTextRef} />
         </div>
-      )}
+        {measure && (
+          <div className="bb-measurecard">
+            {d ? (
+              <div className="bb-measure-main">
+                <span className="bb-tile-label">Pomiar</span>
+                <span className="bb-measure-val">{fmt(d.length())} mm</span>
+                <span className="bb-measure-delta">
+                  ΔX {fmt(Math.abs(d.x))} · ΔY {fmt(Math.abs(d.y))} · ΔZ {fmt(Math.abs(d.z))}
+                </span>
+              </div>
+            ) : (
+              <div className="bb-measure-main measure-help">
+                <b>{points.length === 0 ? 'Dotknij pierwszego punktu' : 'Dotknij drugiego punktu'}</b>
+                <span>Przytrzymaj palec, żeby celować z lupą</span>
+              </div>
+            )}
+            <div className="measure-side">
+              {points.length > 0 && (
+                <ol className="measure-points">
+                  {points.map((q, k) => (
+                    <li key={k}>
+                      <SnapGlyph kind={q.kind} /> {q.label}
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {points.length > 0 && (
+                <div className="measure-actions">
+                  {cand && cand.list.length > 1 && (
+                    <button className="bb-btn bb-btn--secondary" onClick={nextCandidate}>
+                      <Icon name="rotate" />
+                      Inny punkt ({cand.idx + 1}/{cand.list.length})
+                    </button>
+                  )}
+                  <button
+                    className="bb-btn bb-btn--secondary"
+                    onClick={() => {
+                      setPoints([]);
+                      setCand(null);
+                    }}
+                  >
+                    <Icon name="close" />
+                    Wyczyść
+                  </button>
+                </div>
+              )}
+              {points.length === 0 && (
+                <div className="measure-legend">
+                  <span>
+                    <SnapGlyph kind="corner" /> narożnik
+                  </span>
+                  <span>
+                    <SnapGlyph kind="dim" /> punkt wymiaru
+                  </span>
+                  <span>
+                    <SnapGlyph kind="hole" /> otwór
+                  </span>
+                  <span>
+                    <SnapGlyph kind="end" /> środek końca
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="bb-viewfoot">
+        <span>
+          Gabaryty{' '}
+          <b>
+            {fmt(size.x, 0)} × {fmt(size.y, 0)} × {fmt(size.z, 0)} mm
+          </b>
+        </span>
+        <span className="vf-mode">
+          Wymiary <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b>
+        </span>
+        {foot}
+      </div>
     </div>
+  );
+}
+
+/** Small legend glyph of a snap point kind (same shapes as the markers on the model). */
+function SnapGlyph({ kind }: { kind: SnapKind }) {
+  return (
+    <svg
+      className="snap-glyph"
+      width="18"
+      height="18"
+      viewBox="-9 -9 18 18"
+      aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: markerSvg(kind, 0, 0, 5.5, '') }}
+    />
   );
 }
