@@ -182,6 +182,20 @@ select:focus-visible {
   color: var(--warning-ink);
 }
 
+/* Reference cabinet: status in the footer under the model */
+.bb-viewfoot .vf-cab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bb-viewfoot .vf-cab.is-bad,
+.bb-viewfoot .vf-cab.is-bad b {
+  color: var(--danger);
+}
+.bb-viewfoot .vf-cab.is-warn .bb-ic {
+  color: var(--warning-ink);
+}
+
 /* 3D labels (tags of the design system) */
 .lbl {
   padding: 2px 8px;
@@ -221,6 +235,24 @@ select:focus-visible {
   font-size: 20px;
   line-height: 28px;
   padding: 2px 10px;
+}
+.lbl-cab {
+  background: var(--surface-1);
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+.lbl-phase {
+  background: var(--ink);
+  color: var(--surface-1);
+  font-weight: 800;
+}
+.lbl-gap {
+  background: var(--surface-1);
+  color: var(--action);
+  border: 2px solid var(--action);
 }
 .lbl-measure {
   background: var(--action);
@@ -1137,4 +1169,76 @@ span.bb-st-check {
 }
 .bb-phone .bb-sect select {
   font-size: 16px;
+}
+
+/* Cabinet panel (in place of the step list) */
+.cab-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.cab-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 800;
+}
+.cab-open {
+  flex: none;
+}
+.cab-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--space-3) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.cab-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+.cab-h {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+}
+.cab-bays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.cab-bays .bb-chip {
+  min-width: 112px;
+}
+.cab-add {
+  align-self: stretch;
+}
+.cab-seg3,
+.cab-seg2 {
+  display: grid;
+  height: auto;
+}
+.cab-seg3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.cab-seg2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+.cab-seg3 .bb-seg-opt,
+.cab-seg2 .bb-seg-opt {
+  min-height: 52px;
+}
+.cab-note {
+  font-size: 15px;
+  line-height: 20px;
+  color: var(--ink-2);
 }

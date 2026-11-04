@@ -12,6 +12,7 @@ import {
   sectionKey,
   sectionList,
   straight,
+  type CabinetConfig,
   type MachineSettings,
   type Section,
   type StraightStep,
@@ -19,6 +20,7 @@ import {
 import { sanitizeBusbar } from './sanitize';
 import { planSync } from './syncPlan';
 import { freeHolePosition, removeStep } from './edit';
+import { barToCabinet, cabinetConfig, checkCabinet, phaseAxis, widthAxis } from './cabinet';
 
 const S40x10: Section = { width: 40, thickness: 10, material: 'Cu' };
 const settings: MachineSettings = { ...DEFAULT_SETTINGS, k: 0.4, radius: 10, minLeg: 0 };
@@ -573,5 +575,79 @@ describe('sync plan', () => {
   it('nothing to do when both sides are equal', () => {
     const plan = planSync({ a: b('a', T(10)) }, [b('a', T(10))], [], []);
     expect(plan).toEqual({ toPush: [], toApply: [], toRemoveLocal: [], toDeleteRemote: [] });
+  });
+});
+
+describe('reference cabinet', () => {
+  const L = (bar: ReturnType<typeof newBusbar>, cab: Partial<CabinetConfig>) =>
+    checkCabinet(
+      buildAssembly(bar, settings),
+      cabinetConfig({ ...cab, enabled: true }),
+      bar.section.width,
+      bar.section.thickness,
+    );
+
+  it('places end A and the bar direction in the cabinet', () => {
+    const c = cabinetConfig({ a: { x: 100, y: 1500, z: 200 }, heading: '+x', upSide: '+z' });
+    const m = barToCabinet(c);
+    expect(new Vector3(0, 0, 0).applyMatrix4(m).toArray()).toEqual([100, 1500, 200]);
+    const p = new Vector3(10, 0, 0).applyMatrix4(m);
+    expect(p.x).toBeCloseTo(110);
+    // Bend "up" turns towards the front, so the width runs vertically (w = t × n = −y).
+    expect(widthAxis(c)).toBe('-y');
+    expect(phaseAxis({ ...c, phaseDir: -1 })).toBe('+y');
+  });
+
+  it('keeps bend direction perpendicular to the bar', () => {
+    expect(cabinetConfig({ heading: '+z', upSide: '-z' }).upSide).not.toMatch(/z/);
+  });
+
+  it('measures the gap to the frame and finds collisions', () => {
+    const bar = newBusbar(S40x10, [straight(500)]);
+    // Straight bar 40×10 along x at the back, 100 mm from the back frame plane, starting right of the left upright.
+    const ok = L(bar, { bays: [800], post: 50, a: { x: 100, y: 1000, z: 100 }, heading: '+x', upSide: '+z', phases: 1 });
+    expect(ok.hits).toEqual([]);
+    expect(ok.outside).toBe(false);
+    // Nearest: the back left upright (x ≤ 50, z ≤ 50); bar starts at x = 100, its back face is at z = 95.
+    expect(ok.clearance).toBeCloseTo(Math.hypot(50, 45), 1);
+    const hit = L(bar, { bays: [800], post: 50, a: { x: 20, y: 1000, z: 30 }, heading: '+x', upSide: '+z', phases: 1 });
+    expect(hit.hits.length).toBeGreaterThan(0);
+    expect(hit.clearance).toBe(0);
+    const out = L(bar, {
+      bays: [400],
+      post: 50,
+      a: { x: 100, y: 1000, z: 300 },
+      heading: '+x',
+      upSide: '+z',
+      phases: 1,
+      depth: 600,
+    });
+    expect(out.outside).toBe(true);
+  });
+
+  it('stacks phases across the bar width', () => {
+    const bar = newBusbar(S40x10, [straight(300)]);
+    const r = L(bar, { a: { x: 100, y: 1500, z: 300 }, phases: 3, pitch: 150, phaseDir: 1 });
+    // Width is vertical (−y): three phases 150 mm apart, each 40 mm high.
+    expect(r.bars.max.y - r.bars.min.y).toBeCloseTo(340, 0);
+    expect(r.phasesOverlap).toBe(false);
+    expect(L(bar, { phases: 2, pitch: 30 }).phasesOverlap).toBe(true);
+  });
+
+  it('reads a stored cabinet and repairs bad values', () => {
+    const bar = newBusbar(S40x10, [straight(300)]);
+    const res = sanitizeBusbar(
+      {
+        ...bar,
+        cabinet: { enabled: true, bays: [800, 'x', 600], depth: -5, heading: '+y', upSide: '+y', phases: 9, a: { x: '120,5' } },
+      },
+      settings,
+    );
+    const c = res.bar!.cabinet!;
+    expect(c.bays).toEqual([800, 600]);
+    expect(c.depth).toBe(600);
+    expect(c.phases).toBe(4);
+    expect(c.a.x).toBe(120.5);
+    expect(c.upSide[1]).not.toBe('y');
   });
 });

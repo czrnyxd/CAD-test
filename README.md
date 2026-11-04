@@ -61,6 +61,12 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
 - **Przekroje:** lista typowych przekrojów Cu oraz **„Inny przekrój…”** (na liście u góry; w oknie nowej szyny pola rozwijają się w tym samym oknie): szerokość 5–300 mm, grubość 1–50 mm (mniejsza od szerokości), podgląd przekroju w skali. Własne przekroje są zapamiętywane na liście.
 - **Ustawienia maszyny:** nazwa maszyny, promień narzędzia (z przyciskiem „ustaw we wszystkich gięciach projektu”), K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
 
+## Szafa (odniesienie)
+
+Przycisk **Szafa** nad listą kroków: rama szafy z polami, położenie końca A, kierunek szyny,
+fazy L1–L3 (+N) z rozstawem. Model pokazuje szynę w ramie, kolejne fazy, najmniejszy odstęp od
+ramy i kolizje (na czerwono). Służy tylko do sprawdzenia – nie zmienia szyny ani rozwinięcia.
+
 ## Wygląd (system projektowy)
 
 Interfejs korzysta z systemu projektowego „BusBar CAD”: tokeny kolorów, odstępów i typografii w `src/tokens.css`, style komponentów (`bb-*`) w `src/design.css`, układ aplikacji w `src/styles.css`. Krój Barlow jest dołączony do aplikacji (pakiety `@fontsource`), więc działa bez internetu. Zasady: obrys = „stuknij, by zmienić”, szare tło bez obrysu = wynik obliczeń, niebieskie wypełnienie = wybrane / główna akcja, miedź tylko dla szyny. Układy: tablet poziomo (model po lewej, kroki 460 px po prawej, klawiatura na miejscu panelu), tablet pionowo i telefon (nagłówek w 2 rzędach), wydruk A4 poziomo.

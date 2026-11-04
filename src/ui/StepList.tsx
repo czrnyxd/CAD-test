@@ -31,6 +31,9 @@ interface Props {
   /** Called after a step was removed, with a description (shown with an undo button). */
   onRemoved: (text: string) => void;
   numpad: (req: NumPadRequest) => void;
+  /** Open the cabinet settings; `cabinetOn` – the bar is shown in a cabinet. */
+  onCabinet: () => void;
+  cabinetOn: boolean;
 }
 
 const HOLE_DIAMETERS = [9, 11, 13, 14, 17, 18];
@@ -55,6 +58,8 @@ export function StepList({
   setDouble,
   onRemoved,
   numpad: openNumpad,
+  onCabinet,
+  cabinetOn,
 }: Props) {
   // Keypads opened from the step list take the place of the panel on landscape tablets (model stays visible).
   const numpad = (r: NumPadRequest) => openNumpad({ ...r, placement: 'side' });
@@ -175,9 +180,10 @@ export function StepList({
 
   return (
     <aside className="bb-panel steps" aria-label="Lista kroków">
-      <div className="bb-panel-top">
+      <div className="bb-panel-top bb-row">
         <Seg
           label="Układ szyn"
+          className="bb-grow"
           block
           value={dbl.enabled ? 'd' : 's'}
           options={[
@@ -186,6 +192,11 @@ export function StepList({
           ]}
           onChange={(v) => setDouble({ ...dbl, enabled: v === 'd' })}
         />
+        <button className={`bb-toggle cab-open ${cabinetOn ? 'is-on' : ''}`} onClick={onCabinet}>
+          <Icon name="cabinet" />
+          Szafa
+          <span className="bb-toggle-state">{cabinetOn ? 'wł.' : 'wył.'}</span>
+        </button>
       </div>
       {dbl.enabled && (
         <div className="bb-dual">

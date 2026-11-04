@@ -318,3 +318,22 @@ przekrojach punkty leżą gęsto, a palec (zwłaszcza w rękawicy) zasłania mie
 **Do sprawdzenia przy wdrożeniu:** test na prawdziwym tablecie w rękawicy (czas przytrzymania,
 wielkość lupy, położenie przy krawędziach ekranu), zachowanie przy dwóch palcach (zoom) i w trybie
 pionowym / na telefonie.
+
+### Szafa jako odniesienie – pierwsza wersja zrobiona
+
+Na podstawie zdjęć z produkcji (szyny zbiorcze L1–L3 na wspornikach w ramie szafy, gięte na
+płasko z przesunięciem wokół słupka i kolanem 90° do sąsiedniego pola). Przycisk „Szafa” nad
+listą kroków otwiera panel w miejscu listy (model zostaje widoczny):
+- szafa: pola od lewej (szerokości), głębokość, wysokość, profil ramy (słupki + ramy górne i dolne),
+- położenie środka czoła końca A (od lewej, od podłogi, od tyłu), kierunek szyny od końca A
+  i strona, w którą skręca gięcie „w górę”,
+- fazy L1 / L1–L2 / L1–L3 / + N: ta sama szyna powielona co rozstaw (przezroczyste kopie),
+- sprawdzenie: najmniejszy odstęp od ramy (linia przerywana w 3D), kolizja z ramą (element na
+  czerwono + komunikat), wyjście poza szafę, nachodzenie faz,
+- widoki Przód / Góra / Bok są wtedy widokami szafy (Przód = od drzwi), pomiar podaje
+  szerokość / wysokość / głębokość szafy.
+Szafa nie zmienia szyny ani rozwinięcia i jest zapisywana w projekcie.
+
+**Do ustalenia z produkcją:** typ szaf (wymiary pól, profil ramy), rozstaw faz i położenie
+wsporników szyn (szare listwy na zdjęciach). Następny krok: wsporniki jako elementy szafy
+(szyna musi przez nie przechodzić prosto) i gotowe szablony szaf.

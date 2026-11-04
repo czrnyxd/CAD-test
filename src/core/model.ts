@@ -53,6 +53,35 @@ export interface DoubleConfig {
   gap: number;
 }
 
+/** Axis of the cabinet: x – to the right, y – up, z – towards the front (doors). */
+export type CabinetAxis = '+x' | '-x' | '+y' | '-y' | '+z' | '-z';
+
+/**
+ * Reference cabinet the bar is made for (only for checking the fit, does not change the bar).
+ * Cabinet coordinates: origin in the left, back, bottom corner of the frame; mm.
+ */
+export interface CabinetConfig {
+  enabled: boolean;
+  /** Widths of the fields (sections) from left to right, outer frame size. */
+  bays: number[];
+  depth: number;
+  height: number;
+  /** Size of the square frame profile (uprights and rails). */
+  post: number;
+  /** Centre of end A: from the left, from the floor, from the back. */
+  a: { x: number; y: number; z: number };
+  /** Where the bar runs from end A. */
+  heading: CabinetAxis;
+  /** Where a bend "up" turns the bar at end A (perpendicular to heading). */
+  upSide: CabinetAxis;
+  /** Number of identical bars (phases L1, L2, L3, N) stacked across the width. */
+  phases: number;
+  /** Distance between the phases (centre to centre), mm. */
+  pitch: number;
+  /** Side to which the next phases are stacked: +1 along the bar's width direction, −1 against it. */
+  phaseDir: 1 | -1;
+}
+
 export interface Busbar {
   id: string;
   name: string;
@@ -62,6 +91,7 @@ export interface Busbar {
   dimensionMode: DimensionMode;
   steps: Step[];
   double?: DoubleConfig;
+  cabinet?: CabinetConfig;
   updatedAt: string;
 }
 

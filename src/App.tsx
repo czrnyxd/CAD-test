@@ -28,6 +28,8 @@ import { BendTable, FlatPatternSvg, HoleTable } from './ui/FlatPattern';
 import { NumPad, type NumPadRequest } from './ui/NumPad';
 import { renderSnapshot } from './ui/scene';
 import { StepList } from './ui/StepList';
+import { CabinetPanel } from './ui/CabinetPanel';
+import { cabinetConfig, checkCabinet } from './core/cabinet';
 import { Viewer3D } from './ui/Viewer3D';
 
 type Tab = 'model' | 'flat' | 'settings';
@@ -140,6 +142,13 @@ export default function App() {
   const assembly = useMemo(() => buildAssembly(bar, settings), [bar, settings]);
   const analysis = assembly.parts[0].analysis;
   const double = assembly.parts.length > 1;
+  const cabCfg = useMemo(() => cabinetConfig(bar.cabinet), [bar.cabinet]);
+  const cabCheck = useMemo(
+    () => (cabCfg.enabled ? checkCabinet(assembly, cabCfg, bar.section.width, bar.section.thickness) : null),
+    [assembly, cabCfg, bar.section],
+  );
+  const cabinetView = useMemo(() => (cabCheck ? { cfg: cabCfg, check: cabCheck } : null), [cabCfg, cabCheck]);
+  const [panel, setPanel] = useState<'steps' | 'cabinet'>('steps');
   const issues: Issue[] = assembly.issues;
   const errorSteps = useMemo(
     () => new Set(issues.filter((i) => i.level === 'error' && i.stepIndex !== undefined).map((i) => i.stepIndex!)),
@@ -328,6 +337,7 @@ export default function App() {
             errorSteps={errorSteps}
             issues={issues}
             onSelect={onSelect}
+            cabinet={cabinetView}
             foot={
               double && assembly.arcGaps.length > 0 ? (
                 <span className="vf-gap">
@@ -336,18 +346,31 @@ export default function App() {
               ) : undefined
             }
           />
-          <StepList
-            bar={bar}
-            analysis={analysis}
-            issues={issues}
-            settings={settings}
-            selected={selected}
-            onSelect={onSelect}
-            updateSteps={updateSteps}
-            setDouble={(cfg) => update((b) => ({ ...b, double: cfg }))}
-            onRemoved={(text) => setToast({ text, undo: true })}
-            numpad={openNumpad}
-          />
+          {panel === 'cabinet' ? (
+            <CabinetPanel
+              cfg={cabCfg}
+              check={cabCheck}
+              barWidth={bar.section.width}
+              onChange={(cfg) => update((b) => ({ ...b, cabinet: cfg }))}
+              onClose={() => setPanel('steps')}
+              numpad={openNumpad}
+            />
+          ) : (
+            <StepList
+              bar={bar}
+              analysis={analysis}
+              issues={issues}
+              settings={settings}
+              selected={selected}
+              onSelect={onSelect}
+              updateSteps={updateSteps}
+              setDouble={(cfg) => update((b) => ({ ...b, double: cfg }))}
+              onRemoved={(text) => setToast({ text, undo: true })}
+              numpad={openNumpad}
+              onCabinet={() => setPanel('cabinet')}
+              cabinetOn={cabCfg.enabled}
+            />
+          )}
         </div>
       )}
       {tab === 'flat' && (

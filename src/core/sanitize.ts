@@ -1,9 +1,12 @@
 import { fmt } from './analyze';
+import { AXES, DEFAULT_CABINET, cabinetConfig } from './cabinet';
 import {
   DEFAULT_DOUBLE,
   newId,
   type Busbar,
   type DimensionMode,
+  type CabinetAxis,
+  type CabinetConfig,
   type DoubleConfig,
   type Hole,
   type MachineSettings,
@@ -151,7 +154,42 @@ export function sanitizeBusbar(raw: unknown, settings: MachineSettings): Sanitiz
     updatedAt,
   };
   if (double) bar.double = double;
+  if (isObj(raw.cabinet)) bar.cabinet = sanitizeCabinet(raw.cabinet);
   return { bar, changes };
+}
+
+/** Reference cabinet: keep sensible values, fall back to the defaults otherwise (it never blocks a project). */
+function sanitizeCabinet(c: Obj): CabinetConfig {
+  const d = DEFAULT_CABINET;
+  const pos = (v: unknown, def: number, max = 20000) => {
+    const n = num(v);
+    return n > 0 && n <= max ? n : def;
+  };
+  const coord = (v: unknown, def: number) => {
+    const n = num(v);
+    return Number.isFinite(n) && Math.abs(n) <= 50000 ? n : def;
+  };
+  const axis = (v: unknown, def: CabinetAxis) => (AXES.includes(v as CabinetAxis) ? (v as CabinetAxis) : def);
+  const bays = Array.isArray(c.bays)
+    ? c.bays
+        .map((b) => num(b))
+        .filter((b) => b > 0 && b <= 5000)
+        .slice(0, 8)
+    : [];
+  const a = isObj(c.a) ? c.a : {};
+  return cabinetConfig({
+    enabled: c.enabled === true,
+    bays: bays.length ? bays : d.bays,
+    depth: pos(c.depth, d.depth),
+    height: pos(c.height, d.height),
+    post: pos(c.post, d.post, 500),
+    a: { x: coord(a.x, d.a.x), y: coord(a.y, d.a.y), z: coord(a.z, d.a.z) },
+    heading: axis(c.heading, d.heading),
+    upSide: axis(c.upSide, d.upSide),
+    phases: Math.max(1, Math.min(4, Math.round(num(c.phases)) || d.phases)),
+    pitch: pos(c.pitch, d.pitch, 2000),
+    phaseDir: c.phaseDir === -1 ? -1 : 1,
+  });
 }
 
 function sanitizeHole(h: unknown): Hole | null {

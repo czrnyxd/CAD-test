@@ -4,11 +4,20 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { fmt, type Issue } from '../core/analyze';
 import type { Assembly } from '../core/assembly';
+import {
+  PHASE_NAMES,
+  barToCabinet,
+  cabinetViewBox,
+  frameParts,
+  phaseShift,
+  totalWidth,
+  type CabinetCheck,
+} from '../core/cabinet';
 import { dirVector, keyPoints, legDimensions } from '../core/geometry';
-import { DIMENSION_MODE_LABEL, DIRECTION_ARROW, type Busbar } from '../core/model';
+import { DIMENSION_MODE_LABEL, DIRECTION_ARROW, type Busbar, type CabinetConfig } from '../core/model';
 import { addLegDimension } from './dimensions3d';
 import { Icon } from './Icon';
-import { addLights, buildPartObjects, fitOrtho, type BarObject, type ViewName } from './scene';
+import { VIEW_DIRS, addLights, buildPartObjects, fitOrtho, type BarObject, type ViewName } from './scene';
 
 interface Props {
   /** The project as edited (leg lengths shown in labels). */
@@ -20,6 +29,8 @@ interface Props {
   onSelect: (i: number | null) => void;
   /** Extra text in the footer under the model. */
   foot?: ReactNode;
+  /** Reference cabinet to show around the bar (null = bar alone). */
+  cabinet?: { cfg: CabinetConfig; check: CabinetCheck } | null;
 }
 
 interface Ctx {
@@ -32,6 +43,10 @@ interface Ctx {
   overlay: THREE.Group;
   grid: THREE.GridHelper;
   measureGroup: THREE.Group;
+  /** Cabinet frame and its labels, placed in bar coordinates. */
+  cabGroup: THREE.Group;
+  /** The other phases (same shape, shifted across the width). */
+  ghosts: BarObject[];
   render: () => void;
 }
 
@@ -104,6 +119,112 @@ const MANY_POINTS = 80;
 /** Distance (mm) in front of a point the occlusion ray starts from – farther than any bar. */
 const FAR = 100000;
 
+const FRAME_COLOR = '#b9c2cc';
+const FRAME_EDGE = '#7d8995';
+const FRAME_HIT = '#d9534f';
+
+/** Rebuild the cabinet frame, the other phases and the clearance line. */
+function buildCabinet(
+  c: Ctx,
+  parts: Assembly['parts'],
+  cab: { cfg: CabinetConfig; check: CabinetCheck } | null,
+  fromCab: THREE.Matrix4 | null,
+) {
+  c.ghosts.forEach((o) => (c.scene.remove(o.group), o.dispose()));
+  c.ghosts = [];
+  disposeGroup(c.cabGroup);
+  if (!cab || !fromCab) return;
+  const { cfg, check } = cab;
+  c.cabGroup.matrix.copy(fromCab);
+  c.cabGroup.matrixWorldNeedsUpdate = true;
+
+  // Frame: light, see-through boxes with outlined edges; parts the bar goes through are red.
+  const unit = new THREE.BoxGeometry(1, 1, 1);
+  const edgeGeom = new THREE.EdgesGeometry(unit);
+  const hit = new Set(check.hits);
+  frameParts(cfg).forEach((fp, i) => {
+    const size = fp.box.getSize(new THREE.Vector3());
+    const mat = new THREE.MeshStandardMaterial({
+      color: hit.has(i) ? FRAME_HIT : FRAME_COLOR,
+      transparent: true,
+      opacity: hit.has(i) ? 0.75 : fp.kind === 'post' ? 0.5 : 0.3,
+      depthWrite: false,
+      metalness: 0.1,
+      roughness: 0.8,
+    });
+    const m = new THREE.Mesh(unit, mat);
+    m.scale.copy(size);
+    fp.box.getCenter(m.position);
+    const e = new THREE.LineSegments(edgeGeom, new THREE.LineBasicMaterial({ color: hit.has(i) ? FRAME_HIT : FRAME_EDGE }));
+    e.scale.copy(size);
+    e.position.copy(m.position);
+    c.cabGroup.add(m, e);
+  });
+  const W = totalWidth(cfg);
+  const band = check.bars;
+  // Floor of the cabinet and the field names under the bars.
+  const size = Math.ceil((Math.max(W, cfg.depth) + 400) / 100) * 100;
+  const floor = new THREE.GridHelper(size, size / 100, '#b5bec8', '#d5dbe1');
+  floor.position.set(W / 2, 0, cfg.depth / 2);
+  c.cabGroup.add(floor);
+  let x0 = 0;
+  cfg.bays.forEach((bw, i) => {
+    const l = label(cfg.bays.length > 1 ? `Pole ${i + 1} · ${fmt(bw)}` : `Szafa ${fmt(bw)} × ${fmt(cfg.depth)}`, 'lbl-cab');
+    l.position.set(x0 + bw / 2, Math.max(0, band.min.y - 120), cfg.depth);
+    c.cabGroup.add(l);
+    x0 += bw;
+  });
+
+  // Other phases: the same bars shifted across the width, see-through. Phase names at end A.
+  const phases = Math.max(1, Math.min(4, Math.round(cfg.phases)));
+  for (let k = 0; k < phases; k++) {
+    const shift = phaseShift(cfg, k);
+    if (k > 0) {
+      for (const o of buildPartObjects(parts)) {
+        o.group.position.add(shift);
+        o.group.traverse((x) => {
+          const m = (x as THREE.Mesh).material as THREE.Material | undefined;
+          if (!m) return;
+          m.transparent = true;
+          m.opacity = 0.45;
+          m.depthWrite = false;
+        });
+        o.group.updateMatrixWorld(true);
+        c.scene.add(o.group);
+        c.ghosts.push(o);
+      }
+    }
+    if (phases > 1) {
+      const s0 = parts[0].path.samples[0];
+      const l = label(PHASE_NAMES[k], 'lbl-phase');
+      l.center.set(1.15, 0.5);
+      l.position.copy(s0.p).add(shift);
+      c.overlay.add(l);
+    }
+  }
+
+  // Smallest gap to the frame (or the collision) as a dimension line.
+  if (check.from && check.to) {
+    const touching = check.clearance < 0.05;
+    if (!touching) {
+      const g = new THREE.BufferGeometry().setFromPoints([check.from, check.to]);
+      const line = new THREE.Line(
+        g,
+        new THREE.LineDashedMaterial({ color: '#0b5cd5', dashSize: 6, gapSize: 4, depthTest: false }),
+      );
+      line.computeLineDistances();
+      line.renderOrder = 9;
+      c.cabGroup.add(line);
+    }
+    const l = label(touching ? 'Kolizja z ramą' : `${fmt(check.clearance)} mm od ramy`, touching ? 'lbl-error' : 'lbl-gap');
+    // At the frame end of the line, so it does not cover the labels of the bar.
+    l.position.copy(check.to);
+    l.center.set(0.5, 1.3);
+    c.cabGroup.add(l);
+  }
+  c.cabGroup.updateMatrixWorld(true);
+}
+
 const VIEWS: [ViewName, string][] = [
   ['iso', 'ISO'],
   ['front', 'Przód'],
@@ -111,10 +232,21 @@ const VIEWS: [ViewName, string][] = [
   ['side', 'Bok'],
 ];
 
-export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect, foot }: Props) {
+export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect, foot, cabinet }: Props) {
   const part1 = assembly.parts[0];
   const { path, analysis } = part1;
-  const bbox = assembly.bbox;
+  /** Cabinet → bar coordinates, and the rotation part of bar → cabinet (for the view directions). */
+  const toCab = cabinet ? barToCabinet(cabinet.cfg) : null;
+  const fromCab = toCab ? toCab.clone().invert() : null;
+  // With the cabinet: fit the bars together with the frame around them.
+  const bbox = cabinet && fromCab ? cabinetViewBox(cabinet.cfg, cabinet.check.bars).applyMatrix4(fromCab) : assembly.bbox;
+  /** View direction; with the cabinet the views are those of the cabinet (front = from the doors). */
+  const viewDir = (v: ViewName) => {
+    const d = VIEW_DIRS[v];
+    if (!fromCab) return d;
+    const r = new THREE.Matrix3().setFromMatrix4(fromCab);
+    return { dir: d.dir.clone().applyMatrix3(r).normalize(), up: d.up.clone().applyMatrix3(r).normalize() };
+  };
   const hostRef = useRef<HTMLDivElement>(null);
   const markRef = useRef<SVGSVGElement>(null);
   const loupeRef = useRef<HTMLDivElement>(null);
@@ -216,7 +348,9 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     scene.add(grid);
     const overlay = new THREE.Group();
     const measureGroup = new THREE.Group();
-    scene.add(overlay, measureGroup);
+    const cabGroup = new THREE.Group();
+    cabGroup.matrixAutoUpdate = false;
+    scene.add(overlay, measureGroup, cabGroup);
 
     const camera = new THREE.OrthographicCamera();
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -258,14 +392,29 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     const ro = new ResizeObserver(resize);
     ro.observe(host);
 
-    ctxRef.current = { renderer, labelRenderer, scene, camera, controls, barObjs: [], overlay, grid, measureGroup, render };
+    ctxRef.current = {
+      renderer,
+      labelRenderer,
+      scene,
+      camera,
+      controls,
+      barObjs: [],
+      overlay,
+      grid,
+      measureGroup,
+      cabGroup,
+      ghosts: [],
+      render,
+    };
     fittedFor.current = null; // a new renderer has a fresh camera: fit it to the part
     resize();
     return () => {
       ro.disconnect();
       controls.dispose();
       ctxRef.current?.barObjs.forEach((o) => o.dispose());
+      ctxRef.current?.ghosts.forEach((o) => o.dispose());
       disposeGroup(overlay);
+      disposeGroup(cabGroup);
       disposeGroup(measureGroup);
       renderer.dispose();
       renderer.domElement.remove();
@@ -279,10 +428,12 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     const c = ctxRef.current;
     if (!c) return;
     const el = hostRef.current!;
-    const dirView = v ?? {
-      dir: c.camera.position.clone().sub(c.controls.target).normalize(),
-      up: c.camera.up.clone(),
-    };
+    const dirView = v
+      ? viewDir(v)
+      : {
+          dir: c.camera.position.clone().sub(c.controls.target).normalize(),
+          up: c.camera.up.clone(),
+        };
     fitOrtho(c.camera, bbox, dirView, el.clientWidth / Math.max(1, el.clientHeight), c.controls.target);
     c.controls.update();
     if (v) setViewName(v);
@@ -312,8 +463,9 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     c.barObjs.forEach((o) => (c.scene.remove(o.group), o.dispose()));
     c.barObjs = buildPartObjects(assembly.parts, { selected, errorSteps });
     c.barObjs.forEach((o) => c.scene.add(o.group));
-    // Keep the floor grid just below the part so it never cuts through it.
-    c.grid.position.y = bbox.min.y - 1;
+    // Keep the floor grid just below the part so it never cuts through it (the cabinet has its own floor).
+    c.grid.position.y = assembly.bbox.min.y - 1;
+    c.grid.visible = !cabinet;
     // Snap points for measuring: section corners and hole centres (both faces) of every bar.
     const { width: W, thickness: T } = bar.section;
     keyPts.current = dedupe(
@@ -430,9 +582,12 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
       }
     }
 
+    buildCabinet(c, assembly.parts, cabinet ?? null, fromCab);
+
     // Fit the camera when a different project is opened.
-    const fitKey = `${bar.id}:${assembly.parts.length}`;
-    if (fittedFor.current?.split(':')[0] !== bar.id) {
+    const fitKey = `${bar.id}:${assembly.parts.length}:${cabinet ? 'cab' : ''}`;
+    const [prevId, , prevCab] = fittedFor.current?.split(':') ?? [];
+    if (prevId !== bar.id || prevCab !== (cabinet ? 'cab' : '')) {
       fittedFor.current = fitKey;
       setView('iso');
     } else if (fittedFor.current !== fitKey) {
@@ -444,7 +599,7 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     }
     updateOcclusion();
     c.render();
-  }, [bar, assembly, selected, errorSteps, issues, showDims]);
+  }, [bar, assembly, selected, errorSteps, issues, showDims, cabinet]);
 
   // Measurement visuals: the line and its value (the point markers are drawn as SVG on top).
   useEffect(() => {
@@ -660,8 +815,11 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     };
   }, [measure, onSelect]);
 
-  const size = bbox.getSize(new THREE.Vector3());
+  const size = assembly.bbox.getSize(new THREE.Vector3());
   const d = points.length === 2 ? points[1].p.clone().sub(points[0].p) : null;
+  /** The same distance along the cabinet axes (width, height, depth). */
+  const dc = d && toCab ? d.clone().transformDirection(toCab).multiplyScalar(d.length()) : null;
+  const ck = cabinet?.check;
   /** Switch the last placed point to the next candidate near the tap. */
   const nextCandidate = () => {
     if (!cand || cand.list.length < 2) return;
@@ -723,7 +881,9 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
                 <span className="bb-tile-label">Pomiar</span>
                 <span className="bb-measure-val">{fmt(d.length())} mm</span>
                 <span className="bb-measure-delta">
-                  ΔX {fmt(Math.abs(d.x))} · ΔY {fmt(Math.abs(d.y))} · ΔZ {fmt(Math.abs(d.z))}
+                  {dc
+                    ? `Szer. ${fmt(Math.abs(dc.x))} · Wys. ${fmt(Math.abs(dc.y))} · Głęb. ${fmt(Math.abs(dc.z))}`
+                    : `ΔX ${fmt(Math.abs(d.x))} · ΔY ${fmt(Math.abs(d.y))} · ΔZ ${fmt(Math.abs(d.z))}`}
                 </span>
               </div>
             ) : (
@@ -793,6 +953,32 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
           Wymiary <b>{DIMENSION_MODE_LABEL[bar.dimensionMode]}</b>
         </span>
         {foot}
+        {ck && (
+          <span className={`vf-cab ${ck.hits.length || ck.phasesOverlap ? 'is-bad' : ck.outside ? 'is-warn' : ''}`}>
+            {ck.hits.length ? (
+              <>
+                <Icon name="stop" size={20} />
+                <b>Kolizja z ramą</b>
+                {cabinet!.cfg.phases > 1 && ` (${ck.hitPhases.map((k) => PHASE_NAMES[k]).join(', ')})`}
+              </>
+            ) : ck.phasesOverlap ? (
+              <>
+                <Icon name="stop" size={20} />
+                <b>Fazy nachodzą na siebie</b>
+              </>
+            ) : (
+              <>
+                Od ramy <b>{fmt(ck.clearance)} mm</b>
+              </>
+            )}
+            {ck.outside && !ck.hits.length && (
+              <>
+                <Icon name="warn" size={20} />
+                <b>wychodzi poza szafę</b>
+              </>
+            )}
+          </span>
+        )}
       </div>
     </div>
   );
