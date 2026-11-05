@@ -411,6 +411,11 @@ export function StepList({
                     <Icon name={s.direction} size={22} />
                     {DIRECTION_LABEL[s.direction]}
                   </span>
+                  {info && (
+                    <span className="bb-step-mach">
+                      nastawa {fmt(info.machineAngle)}° · {fmt(info.position, 0)} od A
+                    </span>
+                  )}
                   <span className="bb-step-val">{fmt(s.angle)}°</span>
                 </>
               }

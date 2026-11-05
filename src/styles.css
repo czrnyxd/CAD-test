@@ -1242,3 +1242,219 @@ span.bb-st-check {
   line-height: 20px;
   color: var(--ink-2);
 }
+
+/* ---------- PC at the workstation: mouse and keyboard (app--desktop) ---------- */
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 3px;
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 0.85em;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+/* A wider step panel on large screens. */
+.app--desktop.app--tablet .bb-main {
+  grid-template-columns: 1fr 540px;
+}
+@media (min-width: 1700px) {
+  .app--desktop.app--tablet .bb-main {
+    grid-template-columns: 1fr 600px;
+  }
+}
+/* Hover feedback: everything that reacts to a click shows it under the mouse. */
+.app--desktop .bb-chip:hover:not(:disabled) {
+  border-color: var(--action);
+  background: var(--action-soft);
+}
+.app--desktop .bb-step-head {
+  cursor: pointer;
+}
+.app--desktop .bb-step:not(.is-selected) .bb-step-head:hover {
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+}
+.app--desktop .bb-btn--secondary:hover:not(:disabled),
+.app--desktop .bb-tool:hover:not(:disabled),
+.app--desktop .bb-seg-opt:hover:not(.is-selected),
+.app--desktop .bb-toggle:hover {
+  background: var(--surface-3);
+}
+.app--desktop .bb-btn--primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.app--desktop .bb-viewcanvas canvas {
+  cursor: grab;
+}
+.app--desktop .bb-viewcanvas canvas:active {
+  cursor: grabbing;
+}
+.app--desktop .viewer.measuring .bb-viewcanvas canvas {
+  cursor: crosshair;
+}
+/* Bend cards show the machine setting and the position at a glance. */
+.bb-step-mach {
+  display: none;
+}
+.app--desktop.app--tablet .bb-step-mach {
+  display: inline;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-2);
+  font-feature-settings: 'tnum' 1;
+}
+/* Measuring hints depend on the input. */
+.hint-mouse {
+  display: none;
+}
+.app--desktop .hint-mouse {
+  display: inline;
+}
+.app--desktop .hint-touch {
+  display: none;
+}
+.hover-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 7;
+  pointer-events: none;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: var(--surface-1);
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  display: none;
+}
+.hover-tip.is-on {
+  display: block;
+}
+
+/* Value typed in over the clicked field (mouse and keyboard instead of the on-screen keypad). */
+.ie-card {
+  position: fixed;
+  z-index: 60;
+  box-sizing: border-box;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+}
+.ie-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 72px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border: 3px solid var(--action);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+.ie-field.is-bad {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.ie-card .ie-input {
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 32px;
+  font-weight: 700;
+  font-feature-settings: 'tnum' 1;
+}
+.ie-unit {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.ie-title {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.ie-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ie-q {
+  min-height: 40px;
+  min-width: 52px;
+  padding: 0 10px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ie-q:hover {
+  border-color: var(--action);
+  background: var(--action-soft);
+}
+.ie-q.is-selected {
+  border-color: var(--action);
+  background: var(--action);
+  color: var(--on-action);
+}
+.ie-hint {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink-2);
+}
+.ie-hint.is-bad {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* Keyboard shortcuts dialog */
+.keys-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+}
+.keys-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.keys-row {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  align-items: center;
+  gap: var(--space-2);
+}
+.keys-row dt {
+  white-space: nowrap;
+}
+.keys-row dd {
+  margin: 0;
+  font-size: 16px;
+}
+
+.ie-card .ie-input:focus-visible {
+  outline: 0;
+}

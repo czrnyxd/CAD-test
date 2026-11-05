@@ -17,6 +17,7 @@ import { dirVector, keyPoints, legDimensions } from '../core/geometry';
 import { DIMENSION_MODE_LABEL, DIRECTION_ARROW, type Busbar, type CabinetConfig } from '../core/model';
 import { addLegDimension } from './dimensions3d';
 import { Icon } from './Icon';
+import { keyboardBusy } from './keys';
 import { VIEW_DIRS, addLights, buildPartObjects, fitOrtho, type BarObject, type ViewName } from './scene';
 
 interface Props {
@@ -252,6 +253,7 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
   const loupeRef = useRef<HTMLDivElement>(null);
   const loupeSvgRef = useRef<SVGSVGElement>(null);
   const loupeTextRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<Ctx | null>(null);
   const [measure, setMeasure] = useState(false);
   const [showDims, setShowDims] = useState(true);
@@ -741,12 +743,51 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
         return;
       }
       down = { x: e.clientX, y: e.clientY, id: e.pointerId };
-      if (measure) {
+      // The loupe is for fingers; a mouse already shows the point under the cursor.
+      if (measure && e.pointerType !== 'mouse') {
         finger = local(e);
         holdTimer = window.setTimeout(openLoupe, HOLD_MS);
       }
     };
+    // Mouse: show which point a click would pick (ring + name next to the cursor).
+    let hoverFrame = 0;
+    const hover = (e: PointerEvent) => {
+      const tip = tipRef.current;
+      if (!measure || e.buttons || e.pointerType !== 'mouse') {
+        if (tip) tip.classList.remove('is-on');
+        if (markState.current.hot && !holding) {
+          markState.current.hot = null;
+          c.render();
+        }
+        return;
+      }
+      cancelAnimationFrame(hoverFrame);
+      hoverFrame = requestAnimationFrame(() => {
+        const { x, y } = local(e);
+        const hot = nearby(x, y, SNAP_RADIUS / 1.5)[0] ?? null;
+        if (hot !== markState.current.hot) {
+          markState.current.hot = hot;
+          drawMarkersRef.current();
+        }
+        if (tip) {
+          tip.classList.toggle('is-on', !!hot);
+          if (hot) {
+            const s = toScreen(hot.p);
+            tip.textContent = hot.label;
+            tip.style.transform = `translate(${Math.round(s.x + 18)}px, ${Math.round(s.y - 44)}px)`;
+          }
+        }
+      });
+    };
+    const onLeave = () => {
+      tipRef.current?.classList.remove('is-on');
+      if (markState.current.hot && !holding) {
+        markState.current.hot = null;
+        c.render();
+      }
+    };
     const onMove = (e: PointerEvent) => {
+      if (!down) hover(e);
       if (!down || e.pointerId !== down.id) return;
       if (holding) {
         finger = local(e);
@@ -800,8 +841,11 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     el.addEventListener('pointerup', onUp);
     el.addEventListener('pointercancel', onCancel);
     el.addEventListener('contextmenu', noMenu);
+    el.addEventListener('pointerleave', onLeave);
     return () => {
       clearTimeout(holdTimer);
+      cancelAnimationFrame(hoverFrame);
+      el.removeEventListener('pointerleave', onLeave);
       closeLoupe(false);
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointermove', onMove);
@@ -814,6 +858,28 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
       }
     };
   }, [measure, onSelect]);
+
+  // Keyboard: 1–4 views, F fit, W dimensions, M measuring.
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyRef.current = (e: KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || keyboardBusy(e)) return;
+    const k = e.key.toLowerCase();
+    const v = VIEWS[Number(k) - 1];
+    if (v) setView(v[0]);
+    else if (k === 'f') setView();
+    else if (k === 'w') setShowDims((x) => !x);
+    else if (k === 'm') {
+      setMeasure((x) => !x);
+      setPoints([]);
+      setCand(null);
+    } else return;
+    e.preventDefault();
+  };
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => keyRef.current(e);
+    window.addEventListener('keydown', on);
+    return () => window.removeEventListener('keydown', on);
+  }, []);
 
   const size = assembly.bbox.getSize(new THREE.Vector3());
   const d = points.length === 2 ? points[1].p.clone().sub(points[0].p) : null;
@@ -832,9 +898,10 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
     <div className={`bb-viewport viewer ${measure ? 'measuring' : ''}`}>
       <div className="bb-viewbar">
         <div className="bb-seg" role="radiogroup" aria-label="Widok modelu">
-          {VIEWS.map(([v, l]) => (
+          {VIEWS.map(([v, l], k) => (
             <button
               key={v}
+              title={`${l} (${k + 1})`}
               role="radio"
               aria-checked={view === v}
               className={`bb-seg-opt ${view === v ? 'is-selected' : ''}`}
@@ -844,12 +911,17 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
             </button>
           ))}
         </div>
-        <button className="bb-btn bb-btn--secondary vb-fit" onClick={() => setView()}>
+        <button className="bb-btn bb-btn--secondary vb-fit" title="Dopasuj do okna (F)" onClick={() => setView()}>
           <Icon name="fit" />
           <span className="vb-text">Dopasuj</span>
         </button>
         <span className="bb-spacer" />
-        <button className={`bb-toggle ${showDims ? 'is-on' : ''}`} aria-pressed={showDims} onClick={() => setShowDims((v) => !v)}>
+        <button
+          className={`bb-toggle ${showDims ? 'is-on' : ''}`}
+          aria-pressed={showDims}
+          title="Wymiary (W)"
+          onClick={() => setShowDims((v) => !v)}
+        >
           <Icon name="dims" />
           Wymiary
           <span className="bb-toggle-state">{showDims ? 'wł.' : 'wył.'}</span>
@@ -857,6 +929,7 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
         <button
           className={`bb-toggle ${measure ? 'is-on' : ''}`}
           aria-pressed={measure}
+          title="Zmierz (M)"
           onClick={() => {
             setMeasure((m) => !m);
             setPoints([]);
@@ -870,6 +943,7 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
       </div>
       <div className="bb-viewcanvas" ref={hostRef}>
         <svg className="snap-layer" ref={markRef} aria-hidden="true" />
+        <div className="hover-tip" ref={tipRef} aria-hidden="true" />
         <div className="loupe" ref={loupeRef} aria-hidden="true">
           <svg className="loupe-marks" ref={loupeSvgRef} width={LOUPE} height={LOUPE} />
           <div className="loupe-text" ref={loupeTextRef} />
@@ -889,7 +963,8 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
             ) : (
               <div className="bb-measure-main measure-help">
                 <b>{points.length === 0 ? 'Dotknij pierwszego punktu' : 'Dotknij drugiego punktu'}</b>
-                <span>Przytrzymaj palec, żeby celować z lupą</span>
+                <span className="hint-touch">Przytrzymaj palec, żeby celować z lupą</span>
+                <span className="hint-mouse">Najedź myszą – podświetla się punkt, który zostanie wybrany</span>
               </div>
             )}
             <div className="measure-side">

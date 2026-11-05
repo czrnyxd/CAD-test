@@ -28,6 +28,9 @@ import { BendTable, FlatPatternSvg, HoleTable } from './ui/FlatPattern';
 import { NumPad, type NumPadRequest } from './ui/NumPad';
 import { renderSnapshot } from './ui/scene';
 import { StepList } from './ui/StepList';
+import { InlineEditor } from './ui/InlineEditor';
+import { KeysDialog } from './ui/KeysDialog';
+import { keyboardBusy } from './ui/keys';
 import { CabinetPanel } from './ui/CabinetPanel';
 import { cabinetConfig, checkCabinet } from './core/cabinet';
 import { Viewer3D } from './ui/Viewer3D';
@@ -46,7 +49,40 @@ const IN_FRAME = (() => {
     return true;
   }
 })();
-type Modal = null | 'new' | 'projects';
+type Modal = null | 'new' | 'projects' | 'keys';
+
+/** How values are entered on this device: on-screen keypad (touch) or a field typed into (mouse and keyboard). */
+type InputPref = 'auto' | 'mouse' | 'touch';
+const LS_INPUT = 'busbar.input.v1';
+
+function useInputMode(): [boolean, InputPref, (p: InputPref) => void] {
+  const read = (): InputPref => {
+    try {
+      const v = localStorage.getItem(LS_INPUT);
+      return v === 'mouse' || v === 'touch' ? v : 'auto';
+    } catch {
+      return 'auto';
+    }
+  };
+  const fine = () => typeof window.matchMedia === 'function' && window.matchMedia('(pointer: fine)').matches;
+  const [pref, setPrefState] = useState<InputPref>(read);
+  const [isFine, setFine] = useState(fine);
+  useEffect(() => {
+    const mq = window.matchMedia?.('(pointer: fine)');
+    const on = () => setFine(fine());
+    mq?.addEventListener?.('change', on);
+    return () => mq?.removeEventListener?.('change', on);
+  }, []);
+  const setPref = (p: InputPref) => {
+    setPrefState(p);
+    try {
+      localStorage.setItem(LS_INPUT, p);
+    } catch {
+      /* only a convenience of this device */
+    }
+  };
+  return [pref === 'mouse' || (pref === 'auto' && isFine), pref, setPref];
+}
 
 /** Tablet in landscape (model left, steps right), tablet in portrait (stacked) or phone. */
 function useLayout(): Layout {
@@ -77,15 +113,18 @@ function ToolButton({
   onClick,
   disabled,
   className,
+  title,
 }: {
   icon: IconName;
   label: string;
   onClick: () => void;
   disabled?: boolean;
   className?: string;
+  /** Tooltip (with the keyboard shortcut). */
+  title?: string;
 }) {
   return (
-    <button type="button" className={`bb-tool ${className ?? ''}`} onClick={onClick} disabled={disabled}>
+    <button type="button" className={`bb-tool ${className ?? ''}`} onClick={onClick} disabled={disabled} title={title}>
       <Icon name={icon} />
       <span className="bb-tool-label">{label}</span>
     </button>
@@ -113,6 +152,19 @@ export default function App() {
     addCustomSection,
   } = useStore();
   const layout = useLayout();
+  const [desktop, inputPref, setInputPref] = useInputMode();
+  // The value that was clicked last – the typed-in editor opens right over it.
+  const lastPress = useRef<{ el: HTMLElement | null; at: number }>({ el: null, at: 0 });
+  useEffect(() => {
+    const on = (e: PointerEvent) => {
+      lastPress.current = {
+        el: (e.target as Element | null)?.closest?.('.bb-chip, button') as HTMLElement | null,
+        at: Date.now(),
+      };
+    };
+    window.addEventListener('pointerdown', on, true);
+    return () => window.removeEventListener('pointerdown', on, true);
+  }, []);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sectionDialog, setSectionDialog] = useState<{ initial: Section; onOk: (s: Section) => void } | null>(null);
   const askCustomSection = (initial: Section, then: (s: Section) => void) =>
@@ -125,10 +177,13 @@ export default function App() {
     });
   const [tab, setTab] = useState<Tab>('model');
   const [modal, setModal] = useState<Modal>(null);
-  const [np, setNp] = useState<(NumPadRequest & { seq: number }) | null>(null);
+  const [np, setNp] = useState<(NumPadRequest & { seq: number; anchor?: HTMLElement | null }) | null>(null);
   // Every request gets its own keypad instance (key), so "OK i dalej" never shows the previous value.
   const npSeq = useRef(0);
-  const openNumpad = useCallback((r: NumPadRequest) => setNp({ ...r, seq: ++npSeq.current }), []);
+  const openNumpad = useCallback((r: NumPadRequest) => {
+    const lp = lastPress.current;
+    setNp({ ...r, seq: ++npSeq.current, anchor: Date.now() - lp.at < 1000 ? lp.el : null });
+  }, []);
   // A keypad belongs to the screen it was opened on.
   useEffect(() => setNp(null), [tab]);
   const [snapshot, setSnapshot] = useState<string | null>(null);
@@ -170,16 +225,45 @@ export default function App() {
     if (first?.stepIndex !== undefined) select(first.stepIndex);
   };
 
+  // Keyboard: undo / redo, print, help, and moving through the steps (model tab).
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyRef.current = (e: KeyboardEvent) => {
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && e.key.toLowerCase() === 'p') {
+      e.preventDefault();
+      if (!document.querySelector('.bb-scrim')) print();
+      return;
+    }
+    if (keyboardBusy(e)) return;
+    if (ctrl && e.key.toLowerCase() === 'z') (e.shiftKey ? redo : undo)();
+    else if (ctrl && e.key.toLowerCase() === 'y') redo();
+    else if (e.key === 'F1' || e.key === '?') {
+      e.preventDefault();
+      setModal('keys');
+    }
+    if (ctrl || e.altKey || tab !== 'model') return;
+    const click = (sel: string) => (document.querySelector(sel) as HTMLElement | null)?.click();
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const n = bar.steps.length;
+      const d = e.key === 'ArrowDown' ? 1 : -1;
+      select(selected === null ? (d > 0 ? 0 : n - 1) : Math.max(0, Math.min(n - 1, selected + d)));
+    } else if (e.key === 'Enter' && selected !== null) {
+      e.preventDefault();
+      click('.bb-step.is-selected .bb-step-body .bb-chip');
+    } else if (e.key === 'Delete' && selected !== null) {
+      click('.bb-step.is-selected .bb-step-del');
+    } else if (e.key === 'Insert' || e.key === '+') {
+      click('.add-bend');
+    } else if (e.key === 'Escape') {
+      select(null);
+    }
+  };
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') (e.shiftKey ? redo : undo)();
-      if ((e.ctrlKey || e.metaKey) && e.key === 'y') redo();
-    };
+    const onKey = (e: KeyboardEvent) => keyRef.current(e);
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo]);
+  }, []);
 
   const print = () => {
     if (IN_FRAME) {
@@ -244,20 +328,21 @@ export default function App() {
   );
   const history = (
     <div className="bb-tgroup">
-      <ToolButton icon="undo" label="Cofnij" onClick={undo} disabled={!past.length} />
-      <ToolButton icon="redo" label="Ponów" onClick={redo} disabled={!future.length} />
+      <ToolButton icon="undo" label="Cofnij" title="Cofnij (Ctrl+Z)" onClick={undo} disabled={!past.length} />
+      <ToolButton icon="redo" label="Ponów" title="Ponów (Ctrl+Y)" onClick={redo} disabled={!future.length} />
     </div>
   );
   const tools = (
     <div className="bb-tgroup">
       <ToolButton icon="plus" label="Nowa" onClick={() => setModal('new')} />
       <ToolButton icon="folder" label="Projekty" onClick={() => setModal('projects')} />
-      <ToolButton icon="print" label="Drukuj" onClick={print} />
+      <ToolButton icon="print" label="Drukuj" title="Drukuj (Ctrl+P)" onClick={print} />
+      {desktop && <ToolButton icon="keyboard" label="Skróty" title="Skróty klawiszowe (F1)" onClick={() => setModal('keys')} />}
     </div>
   );
 
   return (
-    <div className={`bb-screen app app--${layout} ${layout === 'phone' ? 'bb-phone' : ''}`}>
+    <div className={`bb-screen app app--${layout} ${layout === 'phone' ? 'bb-phone' : ''} ${desktop ? 'app--desktop' : ''}`}>
       {layout === 'tablet' ? (
         <header className="bb-header">
           <Mark />
@@ -425,7 +510,15 @@ export default function App() {
         </>
       )}
       {tab === 'settings' && (
-        <SettingsTab bar={bar} settings={settings} update={update} setSettings={setSettings} numpad={openNumpad} />
+        <SettingsTab
+          bar={bar}
+          settings={settings}
+          update={update}
+          setSettings={setSettings}
+          numpad={openNumpad}
+          inputPref={inputPref}
+          setInputPref={setInputPref}
+        />
       )}
 
       <footer className={`bb-status ${layout === 'phone' ? 'bb-status--compact' : ''}`}>
@@ -544,7 +637,13 @@ export default function App() {
           }}
         />
       )}
-      {np && <NumPad key={np.seq} req={np} onClose={() => setNp(null)} />}
+      {np &&
+        (desktop ? (
+          <InlineEditor key={np.seq} req={np} onClose={() => setNp(null)} />
+        ) : (
+          <NumPad key={np.seq} req={np} onClose={() => setNp(null)} />
+        ))}
+      {modal === 'keys' && <KeysDialog onClose={() => setModal(null)} />}
 
       <PrintSheet bar={bar} assembly={assembly} settings={settings} snapshot={snapshot} issues={issues} />
     </div>
@@ -647,12 +746,16 @@ function SettingsTab({
   update,
   setSettings,
   numpad,
+  inputPref,
+  setInputPref,
 }: {
   bar: Busbar;
   settings: MachineSettings;
   update: (fn: (b: Busbar) => Busbar, record?: boolean) => void;
   setSettings: (s: Partial<MachineSettings>) => void;
   numpad: (r: NumPadRequest) => void;
+  inputPref: InputPref;
+  setInputPref: (p: InputPref) => void;
 }) {
   const cutLength = (m: DimensionMode) => analyze({ ...bar, dimensionMode: m }, settings).flatLength;
   const firstBendAt = (ref: MachineSettings['bendLineReference']) =>
@@ -770,6 +873,27 @@ function SettingsTab({
           <p className="bb-p">
             K, sprężynowanie, minimalne ramię i długość handlowa działają od razu we wszystkich projektach. Promień narzędzia
             dotyczy nowych gięć. Wartości K i sprężynowania trzeba skalibrować na próbkach z tej maszyny.
+          </p>
+        </section>
+        <section className="bb-card">
+          <h3 className="bb-card-title">
+            Sterowanie<span className="bb-card-sub">tylko to urządzenie</span>
+          </h3>
+          <Seg
+            label="Sterowanie"
+            block
+            value={inputPref}
+            options={[
+              { value: 'auto', label: 'Automatycznie' },
+              { value: 'mouse', label: 'Mysz i klawiatura' },
+              { value: 'touch', label: 'Dotyk' },
+            ]}
+            onChange={setInputPref}
+          />
+          <p className="bb-p">
+            Mysz i klawiatura: wartości wpisujesz w polu, które otwiera się w miejscu kliknięcia (Enter zapisuje i przechodzi
+            dalej), działają skróty klawiszowe (F1). Dotyk: duża klawiatura ekranowa. Automatycznie wybiera według urządzenia.
+            Wszystko można powiększyć klawiszami Ctrl + plus.
           </p>
         </section>
         <ServerSettings />

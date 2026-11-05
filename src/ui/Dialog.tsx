@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Icon } from './Icon';
 
 /** Dialog of the design system: title bar with "Zamknij", body and an optional footer with the actions. */
@@ -17,8 +17,22 @@ export function Dialog({
   children: ReactNode;
   className?: string;
 }) {
+  // Esc closes the dialog (the topmost one only, when dialogs are stacked).
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || document.querySelector('.ie-card, .numpad-backdrop')) return;
+      const all = document.querySelectorAll('.bb-scrim');
+      if (all[all.length - 1] !== ref.current) return;
+      e.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return (
-    <div className="bb-scrim" onPointerDown={onClose}>
+    <div className="bb-scrim" ref={ref} onPointerDown={onClose}>
       <div
         className={`bb-dialog ${className ?? ''}`}
         role="dialog"

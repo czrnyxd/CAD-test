@@ -61,6 +61,16 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
 - **Przekroje:** lista typowych przekrojów Cu oraz **„Inny przekrój…”** (na liście u góry; w oknie nowej szyny pola rozwijają się w tym samym oknie): szerokość 5–300 mm, grubość 1–50 mm (mniejsza od szerokości), podgląd przekroju w skali. Własne przekroje są zapamiętywane na liście.
 - **Ustawienia maszyny:** nazwa maszyny, promień narzędzia (z przyciskiem „ustaw we wszystkich gięciach projektu”), K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
 
+## Komputer przy stanowisku (mysz i klawiatura)
+
+Na komputerze z myszą aplikacja sama przełącza się na sterowanie myszą i klawiaturą (zmiana:
+Ustawienia → Sterowanie). Kliknięta wartość otwiera pole do wpisania w tym samym miejscu:
+Enter zapisuje i przechodzi do następnej wartości (długość → kąt → długość…), Esc anuluje,
+strzałki zmieniają o 1 (z Shift o 10). Skróty: ↑/↓ kroki, Enter edycja, Insert dodaj gięcie,
+Delete usuń, 1–4 widoki, F dopasuj, W wymiary, M pomiar, Ctrl+Z/Y, Ctrl+P, F1 lista skrótów.
+Przy pomiarze punkt pod kursorem podświetla się z nazwą przed kliknięciem. Karty gięć pokazują
+nastawę i pozycję od A. Cały ekran można powiększyć przez Ctrl + plus.
+
 ## Szafa (odniesienie)
 
 Przycisk **Szafa** nad listą kroków: rama szafy z polami, położenie końca A, kierunek szyny,
