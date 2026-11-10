@@ -98,12 +98,13 @@ export function buildAssembly(project: Busbar, settings: MachineSettings): Assem
     gap: d / Math.cos((b.angle * Math.PI) / 360) - T,
   }));
 
+  const issues1 = [...an1.issues, ...collisionIssues(bar1, path1)];
+  const issues2 = [...an2.issues, ...collisionIssues(bar2, path2)];
   const issues: Issue[] = [
-    ...an1.issues.map((i) => ({ ...i, message: `Szyna 1: ${i.message}` })),
-    ...collisionIssues(bar1, path1).map((i) => ({ ...i, message: `Szyna 1: ${i.message}` })),
+    ...issues1.map((i) => ({ ...i, message: `Szyna 1: ${i.message}` })),
     // Most problems of bar 2 mirror bar 1 – report only those that bar 1 does not have.
-    ...an2.issues
-      .filter((i2) => !an1.issues.some((i1) => i1.code === i2.code && i1.stepIndex === i2.stepIndex && i1.holeId === i2.holeId))
+    ...issues2
+      .filter((i2) => !issues1.some((i1) => i1.code === i2.code && i1.stepIndex === i2.stepIndex && i1.holeId === i2.holeId))
       .map((i) => ({ ...i, message: `Szyna 2: ${i.message}` })),
   ];
 

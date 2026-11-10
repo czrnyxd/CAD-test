@@ -6,6 +6,7 @@ export type IssueCode =
   | 'bend-neighbours'
   | 'bend-angle'
   | 'bend-radius'
+  | 'bend-setting'
   | 'leg-length'
   | 'leg-short'
   | 'leg-min'
@@ -117,6 +118,15 @@ export function analyze(bar: Busbar, settings: MachineSettings): Analysis {
           code: 'bend-radius',
           stepIndex: i,
           message: `Promień R${fmt(s.radius)} mniejszy niż zalecany R${fmt(rMin)} – ryzyko pęknięcia.`,
+        });
+      }
+      const setting = machineAngle(s.angle, settings);
+      if (s.angle > 0 && s.angle < 180 && setting >= 180) {
+        issues.push({
+          level: 'warning',
+          code: 'bend-setting',
+          stepIndex: i,
+          message: `Nastawa ${fmt(setting)}° (kąt ze sprężynowaniem) sięga 180° – takiego gięcia nie da się nastawić.`,
         });
       }
     }

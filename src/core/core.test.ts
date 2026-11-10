@@ -62,6 +62,16 @@ describe('analyze', () => {
   });
 });
 
+describe('machine setting', () => {
+  it('warns when the angle with springback reaches 180°', () => {
+    const bar = { ...newBusbar(S40x10, [straight(400), bend(170, 'up', 10), straight(400)]) };
+    bar.dimensionMode = 'centerline';
+    const codes = (springbackPct: number) => analyze(bar, { ...settings, springbackPct }).issues.map((i) => i.code);
+    expect(codes(2)).not.toContain('bend-setting'); // 173,4°
+    expect(codes(10)).toContain('bend-setting'); // 187°
+  });
+});
+
 describe('geometry', () => {
   it('L-shape outside dimensions match the 3D model bounding box', () => {
     const bar = newBusbar(S40x10, [straight(100), bend(90, 'up', 10), straight(150)]);
@@ -360,6 +370,27 @@ describe('double bar (both bars bent separately with the same tool)', () => {
     ...newBusbar(S40x10, shapes[shape]()),
     dimensionMode: mode,
     double: { enabled: true, side, gap },
+  });
+
+  it('reports a collision of bar 2 with itself even when bar 1 is fine', () => {
+    // Rectangular spiral; bar 2 lies inside it, so its end reaches its own first leg before the end of bar 1 does.
+    const spiral = (last: number) => [
+      straight(300),
+      bend(90, 'up', 10),
+      straight(150),
+      bend(90, 'up', 10),
+      straight(150),
+      bend(90, 'up', 10),
+      straight(last),
+    ];
+    const probe = newBusbar(S40x10, spiral(60));
+    const endY = buildPath(probe, analyze(probe, settings)).samples.at(-1)!.p.y;
+    // End of bar 1 stops 1 mm above its first leg.
+    const bar = { ...newBusbar(S40x10, spiral(60 + (endY - 5) - 1)), double: { enabled: true, side: 'above' as const, gap: 0 } };
+    const collisions = buildAssembly(bar, settings).issues.filter((i) => i.code === 'collision');
+    expect(collisions).toHaveLength(1);
+    expect(collisions[0].message).toMatch(/^Szyna 2:/);
+    expect(buildAssembly({ ...bar, double: undefined }, settings).issues.some((i) => i.code === 'collision')).toBe(false);
   });
 
   it('both bars use the tool radius in every bend', () => {
