@@ -115,39 +115,86 @@ export function keyPoints(path: BarPath, width: number, thickness: number): Vect
   return pts;
 }
 
+/** One straight piece of the centre line (a leg or a chord of a bend arc) in the plane of the bends. */
+interface Piece {
+  /** Middle of the piece. */
+  cx: number;
+  cy: number;
+  /** Unit direction. */
+  ux: number;
+  uy: number;
+  halfLength: number;
+  /** Centre line arc length at the start and at the end of the piece. */
+  s0: number;
+  s1: number;
+  step: number;
+}
+
+/** Do two rectangles (pieces of the bar seen from the side, `halfThickness` each way) overlap? */
+function piecesOverlap(a: Piece, b: Piece, halfThickness: number): boolean {
+  const dx = b.cx - a.cx;
+  const dy = b.cy - a.cy;
+  // Separating axis test on the four edge directions.
+  for (const [ax, ay] of [
+    [a.ux, a.uy],
+    [-a.uy, a.ux],
+    [b.ux, b.uy],
+    [-b.uy, b.ux],
+  ]) {
+    const reach = (p: Piece) => p.halfLength * Math.abs(p.ux * ax + p.uy * ay) + halfThickness * Math.abs(-p.uy * ax + p.ux * ay);
+    if (Math.abs(dx * ax + dy * ay) >= reach(a) + reach(b)) return false;
+  }
+  return true;
+}
+
 /**
- * Rough self-collision check: centerline points far apart along the bar that come closer
- * than the smaller section dimension certainly overlap.
+ * Self-collision check. The bar is bent only through its thickness, so it stays in one plane and
+ * its width does not matter: seen from the side it is a strip as thick as the bar, and it collides
+ * with itself where two pieces of that strip overlap.
+ *
+ * Pieces close to each other along the bar share material in a tight bend, so a pair counts only
+ * when the bar between them is at least half a turn of the tightest possible bend long (π·T/2,
+ * inner radius 0). A shorter piece of bar cannot come back onto itself.
  */
 export function collisionIssues(bar: Busbar, path: BarPath): Issue[] {
-  const { width, thickness } = bar.section;
-  const minDim = Math.min(width, thickness);
-  const total = path.samples[path.samples.length - 1].s;
-  if (total <= 0) return [];
-  const spacing = Math.max(2, total / 800);
-  const pts: { p: Vector3; s: number; step: number }[] = [];
+  const T = bar.section.thickness;
+  const origin = path.samples[0];
+  const pieces: Piece[] = [];
   for (let k = 1; k < path.samples.length; k++) {
     const a = path.samples[k - 1];
     const b = path.samples[k];
-    const ds = b.s - a.s;
-    const n = Math.max(1, Math.ceil(ds / spacing));
-    for (let j = 0; j < n; j++) {
-      pts.push({ p: a.p.clone().lerp(b.p, j / n), s: a.s + (ds * j) / n, step: b.stepIndex });
-    }
+    const d = b.p.clone().sub(a.p);
+    const length = d.length();
+    if (length < 1e-6) continue;
+    const mid = a.p.clone().add(b.p).multiplyScalar(0.5).sub(origin.p);
+    pieces.push({
+      cx: mid.dot(origin.t),
+      cy: mid.dot(origin.n),
+      ux: d.dot(origin.t) / length,
+      uy: d.dot(origin.n) / length,
+      halfLength: length / 2,
+      s0: a.s,
+      s1: b.s,
+      step: b.stepIndex,
+    });
   }
-  const last = path.samples[path.samples.length - 1];
-  pts.push({ p: last.p.clone(), s: last.s, step: last.stepIndex });
 
-  const minSeparation = 2 * Math.max(width, thickness) + minDim;
-  for (let i = 0; i < pts.length; i++) {
-    for (let j = i + 1; j < pts.length; j++) {
-      if (pts[j].s - pts[i].s < minSeparation) continue;
-      if (pts[i].p.distanceTo(pts[j].p) < minDim) {
+  // Slightly thinner than the bar: faces that only touch are not a collision.
+  const halfThickness = (T * 0.98) / 2;
+  const minAlong = (Math.PI * T) / 2;
+  for (let i = 0; i < pieces.length; i++) {
+    const a = pieces[i];
+    for (let j = i + 1; j < pieces.length; j++) {
+      const b = pieces[j];
+      if (b.s0 - a.s1 < minAlong) continue;
+      const reach = a.halfLength + b.halfLength + T;
+      if (Math.abs(b.cx - a.cx) > reach || Math.abs(b.cy - a.cy) > reach) continue;
+      if (piecesOverlap(a, b, halfThickness)) {
         return [
           {
             level: 'error',
             code: 'collision',
-            stepIndex: pts[j].step,
+            stepIndex: b.step,
             message: 'Szyna koliduje sama ze sobą – zmień długości lub kierunki gięć.',
           },
         ];

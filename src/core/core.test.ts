@@ -101,6 +101,78 @@ describe('geometry', () => {
     const path = buildPath(bar, analyze(bar, settings));
     expect(collisionIssues(bar, path)).toHaveLength(0);
   });
+
+  const collides = (section: Section, steps: Parameters<typeof newBusbar>[1]) => {
+    const bar = newBusbar(section, steps);
+    return collisionIssues(bar, buildPath(bar, analyze(bar, settings))).length > 0;
+  };
+
+  it('detects a bar crossing itself for every width', () => {
+    // Two 120° bends in the same direction: the last leg runs back through the first one.
+    for (const width of [20, 40, 60, 80, 100, 120, 200]) {
+      const section: Section = { width, thickness: 10, material: 'Cu' };
+      expect(collides(section, [straight(150), bend(120, 'up', 10), straight(75), bend(120, 'up', 10), straight(150)])).toBe(
+        true,
+      );
+    }
+  });
+
+  it('detects a long thin bar crossing itself', () => {
+    const thin: Section = { width: 12, thickness: 2, material: 'Cu' };
+    expect(collides(thin, [straight(1800), bend(120, 'up', 4), straight(60), bend(120, 'up', 4), straight(1800)])).toBe(true);
+  });
+
+  it('detects legs folded back onto each other (more than half a turn)', () => {
+    expect(collides(S40x10, [straight(150), bend(100, 'up', 10), straight(50), bend(100, 'up', 10), straight(150)])).toBe(true);
+  });
+
+  it('no collision for a single bend of any angle and radius', () => {
+    for (const thickness of [2, 5, 10]) {
+      const section: Section = { width: 40, thickness, material: 'Cu' };
+      for (const radius of [0, thickness / 2, thickness, 3 * thickness, 20 * thickness]) {
+        for (let angle = 5; angle <= 175; angle += 5) {
+          // Centre line dimensions, so that the legs are long enough for every angle.
+          const bar = { ...newBusbar(section, [straight(3000), bend(angle, 'up', radius), straight(3000)]) };
+          bar.dimensionMode = 'centerline';
+          const an = analyze(bar, settings);
+          if (an.issues.some((i) => i.code === 'leg-short')) continue;
+          expect(collisionIssues(bar, buildPath(bar, an)), `T${thickness} R${radius} ${angle}°`).toHaveLength(0);
+        }
+      }
+    }
+  });
+
+  it('no collision for legs that only touch (U with inner radius 0 and no straight part between the bends)', () => {
+    // Outside dimensions: setback = T = 10 per bend, so the leg between the bends has no straight part.
+    expect(collides(S40x10, [straight(150), bend(90, 'up', 0), straight(20), bend(90, 'up', 0), straight(150)])).toBe(false);
+  });
+
+  it('no collision for offsets and steps (bends in opposite directions)', () => {
+    for (const angle of [15, 45, 90, 135]) {
+      expect(
+        collides(S40x10, [straight(200), bend(angle, 'up', 10), straight(150), bend(angle, 'down', 10), straight(200)]),
+      ).toBe(false);
+    }
+  });
+
+  it('an end stopping short of another leg is not a collision, an end pushed into it is', () => {
+    // Rectangular spiral: the last leg comes back down towards the first one (its upper face is at y = T/2 = 5).
+    const spiral = (last: number) => [
+      straight(300),
+      bend(90, 'up', 10),
+      straight(150),
+      bend(90, 'up', 10),
+      straight(150),
+      bend(90, 'up', 10),
+      straight(last),
+    ];
+    const probe = newBusbar(S40x10, spiral(60));
+    const endY = buildPath(probe, analyze(probe, settings)).samples.at(-1)!.p.y;
+    expect(endY).toBeGreaterThan(5);
+    // Lengthening the last leg lowers its end by the same amount.
+    expect(collides(S40x10, spiral(60 + (endY - 5) - 1))).toBe(false); // 1 mm gap
+    expect(collides(S40x10, spiral(60 + (endY - 5) + 2))).toBe(true); // 2 mm into the first leg
+  });
 });
 
 describe('reading projects (import / older versions)', () => {
