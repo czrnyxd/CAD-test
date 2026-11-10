@@ -98,4 +98,19 @@ describe('server', () => {
     const evil = await fetch(`${base}/..%2Fsecret.txt`);
     expect(await evil.text()).not.toContain('tajne');
   });
+
+  it('answers 404 for a missing file instead of the start page', async () => {
+    const old = await fetch(`${base}/assets/app-old.js`);
+    expect(old.status).toBe(404);
+    expect(await old.text()).not.toContain('BusBar');
+    expect((await fetch(`${base}/favicon.ico`)).status).toBe(404);
+  });
+
+  it('sends fonts with their type', async () => {
+    const assets = path.join(dir, 'static', 'assets');
+    await writeFile(path.join(assets, 'font.woff'), 'x');
+    await writeFile(path.join(assets, 'font.woff2'), 'x');
+    expect((await fetch(`${base}/assets/font.woff`)).headers.get('content-type')).toBe('font/woff');
+    expect((await fetch(`${base}/assets/font.woff2`)).headers.get('content-type')).toBe('font/woff2');
+  });
 });

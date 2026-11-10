@@ -34,7 +34,10 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
   '.woff2': 'font/woff2',
+  '.txt': 'text/plain; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
 };
 
 class HttpError extends Error {
@@ -199,6 +202,10 @@ export function createServer({ dataDir, staticDir = '', token = '', corsOrigin =
     let file = path.resolve(root, `.${decoded}`);
     if (!file.startsWith(root + path.sep) && file !== root) throw new HttpError(404, 'Nie znaleziono.');
     let st = await stat(file).catch(() => null);
+    // A missing file (e.g. a script of the previous version) is an error: answering with the start
+    // page would hand HTML to a browser that asked for a script. Only addresses without a file
+    // extension fall back to the app.
+    if (!st && path.extname(file)) throw new HttpError(404, 'Nie znaleziono.');
     if (!st || st.isDirectory()) {
       file = path.join(root, 'index.html');
       st = await stat(file).catch(() => null);
