@@ -1278,14 +1278,15 @@ function PrintSheet({
   const p1 = assembly.parts[0];
   const errors = issues.some((i) => i.level === 'error');
   const printed = new Date().toLocaleDateString('pl-PL');
-  const footer = (page: number) => (
+  // Page numbers are printed by the page itself (see @page in styles.css): a sheet with many bends takes more pages.
+  const footer = (label?: string) => (
     <div className="bb-a4-foot">
       <span>
         Wymiary {DIMENSION_MODE_LABEL[bar.dimensionMode]} · koniec A do zderzaka · R{fmt(settings.radius)} · K{' '}
         {fmt(settings.k, 3)} · sprężynowanie {fmt(settings.springbackPct)}% · {settings.machineName}
       </span>
       <span>
-        Wydrukowano {printed} · strona {page}/{assembly.parts.length}
+        {label ? `${bar.name} – ${label} · ` : ''}Wydrukowano {printed}
       </span>
     </div>
   );
@@ -1340,12 +1341,12 @@ function PrintSheet({
               <h3 className="bb-card-title">Rozwinięcie{double ? ` – ${p1.label}` : ''}</h3>
               <FlatPatternSvg bar={p1.bar} analysis={p1.analysis} settings={settings} width={600} />
             </section>
-            <section className="bb-card">
+            <section className="bb-card print-flow">
               <h3 className="bb-card-title">Gięcia{double ? ` – ${p1.label}` : ''}</h3>
               <BendTable analysis={p1.analysis} settings={settings} print />
             </section>
             {p1.analysis.holes.length > 0 && (
-              <section className="bb-card">
+              <section className="bb-card print-flow">
                 <h3 className="bb-card-title">Otwory</h3>
                 <HoleTable bar={p1.bar} analysis={p1.analysis} print />
               </section>
@@ -1363,7 +1364,7 @@ function PrintSheet({
             )}
           </div>
         </div>
-        {footer(1)}
+        {footer(double ? p1.label : undefined)}
       </div>
       {assembly.parts.slice(1).map((part) => (
         <div key={part.index} className={`bb-a4 ${errors ? 'bb-doc--void' : ''}`}>
@@ -1386,18 +1387,18 @@ function PrintSheet({
             <h3 className="bb-card-title">Rozwinięcie – {part.label}</h3>
             <FlatPatternSvg bar={part.bar} analysis={part.analysis} settings={settings} width={1050} />
           </section>
-          <section className="bb-card">
+          <section className="bb-card print-flow">
             <h3 className="bb-card-title">Gięcia – {part.label}</h3>
             <BendTable analysis={part.analysis} settings={settings} print />
           </section>
           {part.analysis.holes.length > 0 && (
-            <section className="bb-card">
+            <section className="bb-card print-flow">
               <h3 className="bb-card-title">Otwory</h3>
               <HoleTable bar={part.bar} analysis={part.analysis} print />
             </section>
           )}
           <span className="bb-spacer" />
-          {footer(part.index)}
+          {footer(part.label)}
         </div>
       ))}
     </div>

@@ -1103,9 +1103,19 @@ span.bb-st-check {
   font-weight: 700;
 }
 @media print {
+  /* The page margins take the place of the sheet's padding, so a sheet that continues on the next
+     page keeps its margins there too. */
   @page {
     size: A4 landscape;
-    margin: 0;
+    margin: 6mm 7mm 7mm;
+    @bottom-right {
+      content: 'strona ' counter(page) ' / ' counter(pages);
+      font:
+        500 9pt Barlow,
+        sans-serif;
+      color: #505c68;
+      vertical-align: top;
+    }
   }
   html,
   body,
@@ -1124,13 +1134,43 @@ span.bb-st-check {
   .print-sheet {
     display: block;
   }
+  /* One sheet fills a page (printable area 283 × 197 mm). With many bends or holes it grows and
+     continues on the following pages instead of cutting the tables off. */
   .bb-a4 {
-    width: 297mm;
-    height: 209mm;
+    width: auto;
+    height: auto;
+    min-height: 196mm;
+    padding: 0;
+    overflow: visible;
     page-break-after: always;
     break-after: page;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+  /* Drawings stay in one piece; tables break between rows and repeat their header. */
+  .bb-a4 .bb-card {
+    break-inside: avoid;
+  }
+  .bb-a4 .bb-card.print-flow {
+    break-inside: auto;
+  }
+  .bb-a4 .table-scroll {
+    overflow: visible;
+  }
+  .bb-a4 .bb-table thead {
+    display: table-header-group;
+  }
+  .bb-a4 .bb-table tr,
+  .bb-a4 .table-note,
+  .bb-a4 .print-notes > div,
+  .bb-a4-foot {
+    break-inside: avoid;
+  }
+  .bb-a4 .bb-card-title {
+    break-after: avoid;
+  }
+  .bb-a4 .table-note {
+    break-before: avoid;
   }
   .bb-a4:last-child {
     page-break-after: auto;

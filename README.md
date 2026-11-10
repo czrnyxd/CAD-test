@@ -32,7 +32,7 @@ Jednorazowa konfiguracja na github.com (da się zrobić z telefonu):
 2. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 3. **Actions → Deploy to GitHub Pages → Run workflow** (albo dowolny nowy push).
 
-Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („Dodaj do ekranu głównego”), żeby otwierała się jak aplikacja. Po pierwszym otwarciu aplikacja działa także **bez internetu** (service worker), a po powrocie sieci sama pobiera nowszą wersję.
+Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („Dodaj do ekranu głównego”), żeby otwierała się jak aplikacja. Już po pierwszym otwarciu aplikacja działa także **bez internetu** (service worker zapisuje wtedy całą aplikację na urządzeniu), a po powrocie sieci sama pobiera nowszą wersję.
 
 ## Co działa
 
@@ -51,12 +51,12 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
   - pozycje linii gięć (początek, środek lub koniec łuku),
   - nastawa kąta z korektą sprężynowania,
   - wymiarowanie po zewnętrznej (domyślnie), wewnętrznej lub po osi; w Ustawieniach rysunek objaśniający wybrany tryb i długość cięcia projektu w każdym trybie.
-- **Walidacje:** za krótkie odcinki, minimalne ramię, minimalny promień, długość handlowa, kolizja szyny z samą sobą, otwory nachodzące na siebie lub z za cienkim mostkiem materiału (do krawędzi, końca, innego otworu). Projekt z błędami ma na rozwinięciu i wydruku oznaczenie „NIE DO PRODUKCJI”.
+- **Walidacje:** za krótkie odcinki, minimalne ramię, minimalny promień, długość handlowa, kolizja szyny z samą sobą (liczona po grubości, niezależnie od szerokości szyny), otwory nachodzące na siebie lub z za cienkim mostkiem materiału (do krawędzi, końca, innego otworu). Projekt z błędami ma na rozwinięciu i wydruku oznaczenie „NIE DO PRODUKCJI”.
 - **Rozwinięcie:**
   - rysunek gotowej szyny (widok z przodu, w skali) z wymiarami ramion i kątami – do sprawdzenia po gięciu,
   - rozwinięcie: widok na górną stronę szyny (↑ = gięcie w stronę patrzącego), wymiary łańcuchowe i od bazy, strefy gięć, otwory,
   - tabela gięć dla operatora z kolumną **„Ułożenie szyny”**: szynę wkłada się końcem A do zderzaka, a przed gięciem w przeciwną stronę niż poprzednie obraca się ją („↻ obróć szynę”); na telefonie tabela jako karty.
-- **Wydruk A4 / PDF:** nagłówek zlecenia, rysunek gotowej szyny z wymiarami, widok 3D, rozwinięcie, tabela gięć i otworów (pojedyncza szyna na 1 stronie).
+- **Wydruk A4 / PDF:** nagłówek zlecenia, rysunek gotowej szyny z wymiarami, widok 3D, rozwinięcie, tabela gięć i otworów. Typowa pojedyncza szyna mieści się na 1 stronie; przy wielu gięciach lub otworach tabele przechodzą na kolejne strony (z powtórzonym nagłówkiem tabeli i numerami stron).
 - **Projekty:** autozapis w przeglądarce (localStorage, z ostrzeżeniem gdy zapis się nie uda), lista projektów, kopiowanie, eksport i import JSON, cofnij/ponów. Import sprawdza dane: odrzuca plik bez poprawnego przekroju lub odcinków, a każdą poprawkę (np. przy projekcie ze starszej wersji) pokazuje do sprawdzenia.
 - **Przekroje:** lista typowych przekrojów Cu oraz **„Inny przekrój…”** (na liście u góry; w oknie nowej szyny pola rozwijają się w tym samym oknie): szerokość 5–300 mm, grubość 1–50 mm (mniejsza od szerokości), podgląd przekroju w skali. Własne przekroje są zapamiętywane na liście.
 - **Ustawienia maszyny:** nazwa maszyny, promień narzędzia (z przyciskiem „ustaw we wszystkich gięciach projektu”), K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
@@ -87,6 +87,7 @@ Interfejs korzysta z systemu projektowego „BusBar CAD”: tokeny kolorów, ods
 src/core/      model danych, obliczenia gięć, geometria 3D (bez UI, z testami)
 src/ui/        widok 3D (three.js), lista kroków, klawiatura, rozwinięcie, ikony i kontrolki systemu projektowego
 src/store.ts   stan aplikacji, historia cofnij/ponów, zapis lokalny
+scripts/       pomocnicze kroki budowania (lista plików do pracy offline w service workerze)
 ```
 
 ## Ograniczenia prototypu
