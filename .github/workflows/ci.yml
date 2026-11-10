@@ -1,0 +1,29 @@
+name: Check
+
+# Formatting, types, tests and build for work in progress. The master branch is checked by the
+# deployment workflow (pages.yml).
+on:
+  push:
+    branches-ignore: [master]
+  pull_request:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
