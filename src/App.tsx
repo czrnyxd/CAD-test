@@ -693,6 +693,16 @@ function CutStrip({ assembly, bar, cutText }: { assembly: Assembly; bar: Busbar;
         <span className="bb-tile-label">{double ? 'Długości cięcia' : 'Długość cięcia'}</span>
         <span className="bb-cutnum">{cutText}</span>
       </div>
+      {bar.orderNo.trim() && (
+        <div className="bb-cutstrip-item">
+          <span className="bb-tile-label">Zlecenie</span>
+          <span className="bb-cutitem">{bar.orderNo.trim()}</span>
+        </div>
+      )}
+      <div className="bb-cutstrip-item">
+        <span className="bb-tile-label">Ilość</span>
+        <span className="bb-cutitem">{quantityText(bar)}</span>
+      </div>
       <div className="bb-cutstrip-item">
         <span className="bb-tile-label">Przekrój</span>
         <span className="bb-cutitem">{sectionLabel(bar.section)}</span>
@@ -740,6 +750,43 @@ const MODE_HOW: Record<DimensionMode, string> = {
   inside: 'od końca do wewnętrznej ściany',
 };
 
+/** How many bars (or sets of two bars) to make: "3 szt." / "3 kpl.". */
+function quantityText(bar: Busbar): string {
+  return `${bar.quantity} ${bar.double?.enabled ? 'kpl.' : 'szt.'}`;
+}
+
+function QuantityChip({
+  double,
+  value,
+  numpad,
+  onChange,
+}: {
+  double: boolean;
+  value: number;
+  numpad: (r: NumPadRequest) => void;
+  onChange: (q: number) => void;
+}) {
+  return (
+    <Chip
+      label={double ? 'Ilość kompletów' : 'Ilość sztuk'}
+      value={String(value)}
+      unit={double ? 'kpl.' : 'szt.'}
+      className="qty-chip"
+      onClick={() =>
+        numpad({
+          title: double ? 'Ilość kompletów (po 2 szyny)' : 'Ilość sztuk',
+          value,
+          unit: double ? 'kpl.' : 'szt.',
+          min: 1,
+          max: 9999,
+          quick: [1, 2, 3, 4, 6, 10],
+          onOk: (v) => onChange(Math.max(1, Math.round(v))),
+        })
+      }
+    />
+  );
+}
+
 function SettingsTab({
   bar,
   settings,
@@ -784,34 +831,58 @@ function SettingsTab({
   };
   return (
     <div className="bb-doc bb-settings settings-tab">
-      <section className="bb-card">
-        <h3 className="bb-card-title">Wymiarowanie odcinków</h3>
-        <div className="bb-modes" role="radiogroup" aria-label="Tryb wymiarowania">
-          {(['outside', 'centerline', 'inside'] as DimensionMode[]).map((m) => (
-            <button
-              key={m}
-              type="button"
-              role="radio"
-              aria-checked={bar.dimensionMode === m}
-              className={`bb-mode ${bar.dimensionMode === m ? 'is-selected' : ''}`}
-              onClick={() => update((b) => ({ ...b, dimensionMode: m }))}
-            >
-              <ModeSketch mode={m} />
-              <span className="bb-mode-name">{DIMENSION_MODE_LABEL[m].replace(/^po /, 'Po ')}</span>
-              <span className="bb-mode-how">{MODE_HOW[m]}</span>
-              <span className="bb-mode-cut">
-                <span className="bb-tile-label">Cięcie</span>
-                <span className="bb-mode-val">{fmt(cutLength(m), 0)} mm</span>
-              </span>
-            </button>
-          ))}
-        </div>
-        <p className="bb-p">
-          Zmiana trybu nie zmienia wpisanych liczb. Zmienia to, skąd dokąd są mierzone, więc zmienia się wygięta szyna i długość
-          cięcia (podana przy każdym trybie dla tego projektu).
-        </p>
-        <DimensionModeHelp mode={bar.dimensionMode} />
-      </section>
+      <div className="bb-col">
+        <section className="bb-card">
+          <h3 className="bb-card-title">
+            Zlecenie<span className="bb-card-sub">ta szyna, drukuje się w nagłówku</span>
+          </h3>
+          <div className="bb-row">
+            <label className="bb-chip bb-input bb-grow">
+              <span className="bb-chip-label">Nr zlecenia</span>
+              <input
+                value={bar.orderNo}
+                maxLength={60}
+                placeholder="np. ZL/2026/123"
+                onChange={(e) => update((b) => ({ ...b, orderNo: e.target.value }), false)}
+              />
+            </label>
+            <QuantityChip
+              double={!!bar.double?.enabled}
+              value={bar.quantity}
+              numpad={numpad}
+              onChange={(q) => update((b) => ({ ...b, quantity: q }))}
+            />
+          </div>
+        </section>
+        <section className="bb-card">
+          <h3 className="bb-card-title">Wymiarowanie odcinków</h3>
+          <div className="bb-modes" role="radiogroup" aria-label="Tryb wymiarowania">
+            {(['outside', 'centerline', 'inside'] as DimensionMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={bar.dimensionMode === m}
+                className={`bb-mode ${bar.dimensionMode === m ? 'is-selected' : ''}`}
+                onClick={() => update((b) => ({ ...b, dimensionMode: m }))}
+              >
+                <ModeSketch mode={m} />
+                <span className="bb-mode-name">{DIMENSION_MODE_LABEL[m].replace(/^po /, 'Po ')}</span>
+                <span className="bb-mode-how">{MODE_HOW[m]}</span>
+                <span className="bb-mode-cut">
+                  <span className="bb-tile-label">Cięcie</span>
+                  <span className="bb-mode-val">{fmt(cutLength(m), 0)} mm</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <p className="bb-p">
+            Zmiana trybu nie zmienia wpisanych liczb. Zmienia to, skąd dokąd są mierzone, więc zmienia się wygięta szyna i długość
+            cięcia (podana przy każdym trybie dla tego projektu).
+          </p>
+          <DimensionModeHelp mode={bar.dimensionMode} />
+        </section>
+      </div>
       <div className="bb-col">
         <section className="bb-card">
           <h3 className="bb-card-title">Maszyna</h3>
@@ -921,6 +992,7 @@ function NewModal({
 }) {
   const [section, setSection] = useState<Section>(current);
   const [orderNo, setOrderNo] = useState('');
+  const [quantity, setQuantity] = useState(1);
   const [shape, setShape] = useState(TEMPLATES[0].id);
   // "Inny przekrój" edited right here (no extra dialog).
   const [custom, setCustom] = useState<{ width: number; thickness: number } | null>(null);
@@ -928,7 +1000,7 @@ function NewModal({
   const list = sections.some((x) => sectionKey(x) === sectionKey(section)) ? sections : sectionList(sections, section);
   const create = () => {
     const t = TEMPLATES.find((x) => x.id === shape)!;
-    onCreate({ ...newBusbar(section, t.build(settings), `Szyna ${t.name}`), orderNo: orderNo.trim() });
+    onCreate({ ...newBusbar(section, t.build(settings), `Szyna ${t.name}`), orderNo: orderNo.trim(), quantity });
   };
   return (
     <Dialog
@@ -947,10 +1019,13 @@ function NewModal({
     >
       <div className="bb-newgrid">
         <div className="bb-col">
-          <label className="bb-chip bb-input">
-            <span className="bb-chip-label">Nr zlecenia (opcjonalnie, drukuje się w nagłówku)</span>
-            <input value={orderNo} onChange={(e) => setOrderNo(e.target.value)} placeholder="np. ZL/2026/123" />
-          </label>
+          <div className="bb-row">
+            <label className="bb-chip bb-input bb-grow">
+              <span className="bb-chip-label">Nr zlecenia (opcjonalnie, drukuje się w nagłówku)</span>
+              <input value={orderNo} maxLength={60} onChange={(e) => setOrderNo(e.target.value)} placeholder="np. ZL/2026/123" />
+            </label>
+            <QuantityChip double={false} value={quantity} numpad={numpad} onChange={setQuantity} />
+          </div>
           <span className="bb-field-label">Przekrój (szerokość × grubość, Cu)</span>
           <div className="bb-picks">
             {list.map((x) => (
@@ -1165,7 +1240,10 @@ function ProjectsModal({
                 {sectionLabel(p.section)} ·{' '}
                 {plural(p.steps.filter((s) => s.kind === 'bend').length, ['gięcie', 'gięcia', 'gięć'])}
               </span>
-              <span className="bb-proj-meta">{p.orderNo || '—'}</span>
+              <span className="bb-proj-meta">
+                {p.orderNo || '—'}
+                {p.quantity > 1 ? ` · ${quantityText(p)}` : ''}
+              </span>
               <span className="bb-proj-meta">{new Date(p.updatedAt).toLocaleDateString('pl-PL')}</span>
             </button>
             <button type="button" className="bb-btn bb-btn--secondary" onClick={() => onOpen(duplicateBar(p))}>
@@ -1311,7 +1389,8 @@ function PrintSheet({
             </div>
           </div>
           <div className="bb-a4-meta">
-            {bar.orderNo && <A4Meta label="Zlecenie" value={bar.orderNo} />}
+            {bar.orderNo.trim() && <A4Meta label="Zlecenie" value={bar.orderNo.trim()} />}
+            <A4Meta label="Ilość" value={quantityText(bar)} />
             <A4Meta label="Przekrój" value={sectionLabel(bar.section)} />
             <A4Meta label="Gięcia / otwory" value={`${p1.analysis.bends.length} / ${p1.analysis.holes.length}`} />
             <A4Meta
@@ -1379,6 +1458,8 @@ function PrintSheet({
               </div>
             </div>
             <div className="bb-a4-meta">
+              {bar.orderNo.trim() && <A4Meta label="Zlecenie" value={bar.orderNo.trim()} />}
+              <A4Meta label="Ilość" value={quantityText(bar)} />
               <A4Meta label="Gięcia / otwory" value={`${part.analysis.bends.length} / ${part.analysis.holes.length}`} />
               <A4Meta big label="Długość cięcia" value={`${fmt(part.analysis.flatLength)} mm`} />
             </div>
