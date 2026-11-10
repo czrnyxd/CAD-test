@@ -1,16 +1,22 @@
 // Offline support for BusBar CAD.
 // - The start page is fetched from the network first (updates arrive as soon as there is a
 //   connection); only a successful HTML response for the app's own start page is cached.
-// - Hashed build assets are served cache-first.
+// - The scripts, styles and fonts of the build are stored when the service worker is installed,
+//   so the app starts without a connection right after the first visit. They are served cache-first.
 // - The cache name contains the build id (replaced at build time), so every deployment starts with
 //   a fresh cache and old assets are removed.
 const BUILD_ID = '__BUILD_ID__';
 const CACHE = `busbar-cad-${BUILD_ID}`;
 const SHELL = ['./', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
+// Files of this build (list filled in at build time, see scripts/stampServiceWorker.ts).
+const ASSETS = /*__ASSETS__*/ [];
 const START_KEY = './';
+// Entries are found by address only: every build has its own cache and its files have unique names,
+// while a "Vary" header of the host (e.g. Vary: Origin) would make stored files miss the page's requests.
+const BY_URL = { ignoreVary: true };
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll([...SHELL, ...ASSETS])));
   self.skipWaiting();
 });
 
@@ -47,14 +53,14 @@ self.addEventListener('fetch', (event) => {
           }
           return res;
         })
-        .catch(() => caches.open(CACHE).then((c) => c.match(START_KEY)).then((hit) => hit || Response.error())),
+        .catch(() => caches.open(CACHE).then((c) => c.match(START_KEY, BY_URL)).then((hit) => hit || Response.error())),
     );
     return;
   }
 
   event.respondWith(
     caches.open(CACHE).then((c) =>
-      c.match(req).then(
+      c.match(req, BY_URL).then(
         (hit) =>
           hit ||
           fetch(req).then((res) => {

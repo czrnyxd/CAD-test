@@ -9,8 +9,8 @@
     "preview": "vite preview --host",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
-    "lint": "prettier --check \"src/**/*.{ts,tsx,css}\" && tsc --noEmit",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"scripts/**/*.ts\"",
+    "lint": "prettier --check \"src/**/*.{ts,tsx,css}\" \"scripts/**/*.ts\" && tsc --noEmit",
     "server": "node server/server.mjs"
   },
   "dependencies": {
