@@ -244,6 +244,16 @@ export interface AppState {
 const init = initialBar();
 const initChanges = takeLoadChanges(init.id);
 
+/**
+ * Time of a change that replaces the version dated `previous`: now, but always later than that
+ * version, because the newer date decides which version the server and the other devices keep.
+ */
+export function stampAfter(previous: string): string {
+  const prev = Date.parse(previous);
+  const now = Date.now();
+  return new Date(Number.isFinite(prev) && prev >= now ? prev + 1 : now).toISOString();
+}
+
 function changesNotice(changes: string[]): string | null {
   return changes.length ? `Projekt poprawiono przy wczytaniu – sprawdź go:\n• ${changes.join('\n• ')}` : null;
 }
@@ -267,7 +277,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
   update: (fn, record = true) => {
     const prev = get().bar;
-    const next = { ...fn(prev), updatedAt: new Date().toISOString() };
+    const next = { ...fn(prev), updatedAt: stampAfter(prev.updatedAt) };
     if (!record) return set({ bar: next });
     set({ bar: next, past: [...get().past.slice(-HISTORY_LIMIT), prev], future: [] });
   },
@@ -275,12 +285,15 @@ export const useStore = create<AppState>((set, get) => ({
   undo: () => {
     const { past, bar, future } = get();
     if (!past.length) return;
-    set({ bar: past[past.length - 1], past: past.slice(0, -1), future: [bar, ...future], selected: null });
+    // The restored version is the newest one: with its old date the server would send the undone change back.
+    const restored = { ...past[past.length - 1], updatedAt: stampAfter(bar.updatedAt) };
+    set({ bar: restored, past: past.slice(0, -1), future: [bar, ...future], selected: null });
   },
   redo: () => {
     const { past, bar, future } = get();
     if (!future.length) return;
-    set({ bar: future[0], past: [...past, bar], future: future.slice(1), selected: null });
+    const restored = { ...future[0], updatedAt: stampAfter(bar.updatedAt) };
+    set({ bar: restored, past: [...past, bar], future: future.slice(1), selected: null });
   },
   select: (i) => set({ selected: i }),
   setSettings: (s) => {
