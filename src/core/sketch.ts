@@ -39,38 +39,82 @@ export function axisName(bar: Busbar, id: string): string {
 const validBend = (s: Step | undefined): s is BendStep => !!s && s.kind === 'bend' && s.angle > 0 && s.angle < 180;
 
 export interface SketchGeometry {
-  /** Centreline virtual sharps: [0] end A, then one per leg end. */
+  /**
+   * Dimension points: [0] end A, then one per leg end. They lie on the reference surface of the
+   * dimension mode (outside: the outer virtual sharps and the outer face at the free ends).
+   */
   vertices: Vec2[];
+  /** Centreline virtual sharps, same indices as vertices. */
+  center: Vec2[];
   /** Per straight step: its index, id and the vertices at its ends. */
   legs: { stepIndex: number; id: string; from: number; to: number }[];
   /** Per valid bend: the vertex it is at. */
   bends: { stepIndex: number; vertex: number }[];
+  /** Reference lines along the legs (outer faces for outside dimensions), through the dimension points. */
+  lines: [Vec2, Vec2][];
 }
 
 /**
- * Centreline polyline of the bar. A leg entered in the dimension mode of the project is converted
- * to its centreline sharp-to-sharp length with the same setbacks as the flat pattern uses.
+ * Polyline of the bar. A leg entered in the dimension mode of the project is converted to its
+ * centreline sharp-to-sharp length with the same setbacks as the flat pattern uses; the dimension
+ * points are then moved from the centreline to the reference surface.
  */
 export function sketchGeometry(bar: Busbar, steps: Step[] = bar.steps): SketchGeometry {
   const T = bar.section.thickness;
+  const mode = bar.dimensionMode;
+  // Offset of the reference surface from the centreline, away from the centre of the bend.
+  const e = mode === 'outside' ? T / 2 : mode === 'inside' ? -T / 2 : 0;
   const corr = (s: Step | undefined) =>
-    validBend(s) ? setback(s.angle, s.radius, T, 'centerline') - setback(s.angle, s.radius, T, bar.dimensionMode) : 0;
-  const vertices: Vec2[] = [{ x: 0, y: 0 }];
+    validBend(s) ? setback(s.angle, s.radius, T, 'centerline') - setback(s.angle, s.radius, T, mode) : 0;
+  const center: Vec2[] = [{ x: 0, y: 0 }];
+  const dirs: Vec2[] = [];
   const legs: SketchGeometry['legs'] = [];
   const bends: SketchGeometry['bends'] = [];
+  const bendSign: number[] = []; // per vertex: +1 bend up, −1 down, 0 none
   let heading = 0;
   steps.forEach((s, i) => {
     if (s.kind === 'straight') {
       const len = s.length + corr(steps[i - 1]) + corr(steps[i + 1]);
-      const p = vertices[vertices.length - 1];
-      vertices.push({ x: p.x + len * Math.cos(heading), y: p.y + len * Math.sin(heading) });
-      legs.push({ stepIndex: i, id: s.id, from: vertices.length - 2, to: vertices.length - 1 });
+      const p = center[center.length - 1];
+      const u = { x: Math.cos(heading), y: Math.sin(heading) };
+      center.push({ x: p.x + len * u.x, y: p.y + len * u.y });
+      dirs.push(u);
+      legs.push({ stepIndex: i, id: s.id, from: center.length - 2, to: center.length - 1 });
     } else if (validBend(s)) {
-      bends.push({ stepIndex: i, vertex: vertices.length - 1 });
+      bends.push({ stepIndex: i, vertex: center.length - 1 });
+      bendSign[center.length - 1] = s.direction === 'up' ? 1 : -1;
       heading += ((s.direction === 'up' ? 1 : -1) * s.angle * Math.PI) / 180;
     }
   });
-  return { vertices, legs, bends };
+  // Normal of a leg pointing away from the centre of a bend: a bend up turns left, so outward is right.
+  const outward = (u: Vec2, sign: number): Vec2 => (sign > 0 ? { x: u.y, y: -u.x } : { x: -u.y, y: u.x });
+  const add = (p: Vec2, n: Vec2, k: number) => ({ x: p.x + n.x * k, y: p.y + n.y * k });
+  const vertices = center.map((c, v) => {
+    const sign = bendSign[v];
+    if (sign) {
+      // Intersection of the two offset faces: c + e·(n1 + n2) / (1 + n1·n2).
+      const n1 = outward(dirs[v - 1], sign);
+      const n2 = outward(dirs[v], sign);
+      const k = e / (1 + n1.x * n2.x + n1.y * n2.y);
+      return { x: c.x + (n1.x + n2.x) * k, y: c.y + (n1.y + n2.y) * k };
+    }
+    // Free end: on the reference face of the bend at the other end of its leg.
+    const legDir = v === 0 ? dirs[0] : dirs[v - 1];
+    const endSign = (v === 0 ? bendSign[1] : bendSign[v - 1]) ?? 0;
+    return legDir && endSign ? add(c, outward(legDir, endSign), e) : { ...c };
+  });
+  // Reference lines: each leg on the reference face of each bend at its ends (both faces when they differ).
+  const lines: [Vec2, Vec2][] = [];
+  legs.forEach((l, k) => {
+    const u = dirs[k];
+    const signs = new Set([bendSign[l.from], bendSign[l.to]].filter(Boolean));
+    if (!signs.size) signs.add(0);
+    for (const sg of signs) {
+      const n = sg ? outward(u, sg) : { x: 0, y: 0 };
+      lines.push([add(center[l.from], n, sg ? e : 0), add(center[l.to], n, sg ? e : 0)]);
+    }
+  });
+  return { vertices, center, legs, bends, lines };
 }
 
 /** Vertex a point reference stands for, or null when its leg no longer exists. */
@@ -187,7 +231,14 @@ export interface SolveResult {
  * Change the free (unlocked, not fixed) leg lengths and bend angles as little as possible so that
  * every target gets its value. Least change: lengths in mm, angles weighted by ANGLE_COST.
  */
-function solve(bar: Busbar, targets: Target[], fixed: Set<string> = new Set(), damping = 1e-9): SolveResult {
+function solve(
+  bar: Busbar,
+  targets: Target[],
+  fixed: Set<string> = new Set(),
+  damping = 1e-9,
+  /** Extra cost of changing particular steps (by id), × the normal cost. */
+  cost: Map<string, number> = new Map(),
+): SolveResult {
   const steps = bar.steps;
   const params: Param[] = [];
   steps.forEach((s, i) => {
@@ -205,7 +256,7 @@ function solve(bar: Busbar, targets: Target[], fixed: Set<string> = new Set(), d
   if (!targets.length) return { steps, ok: true, error: 0 };
   let r = residual(x);
   if (!params.length) return { steps, ok: worst(r) < 0.01, error: worst(r) };
-  const scale = params.map((p) => (p.kind === 'ang' ? 1 / ANGLE_COST : 1));
+  const scale = params.map((p) => (p.kind === 'ang' ? 1 / ANGLE_COST : 1) / (cost.get(steps[p.step].id) ?? 1));
   const sw = targets.map((t) => Math.sqrt(t.weight));
   for (let it = 0; it < 40 && worst(r) > 1e-4; it++) {
     // Jacobian (central differences), weighted rows, scaled columns.
@@ -344,38 +395,36 @@ export function keepLockedDims(bar: Busbar, changedIds: Set<string>): SketchChan
 }
 
 /**
- * Drag a leg: the grabbed point of the leg moves across the leg by `shift` mm (along its normal
- * at the start of the drag), keeping the locked dimensions. Best effort – the leg follows as far
- * as the locks allow.
+ * Drag a leg: the grabbed point of the leg (at `along` mm from its start on the centreline)
+ * follows the cursor (`to`, plane coordinates), keeping the locked dimensions, lengths and angles.
+ * The grabbed point stays at the same fraction of the leg. Steps change as little as possible:
+ * other lengths first, the dragged leg's own length next, angles where lengths cannot do it (or
+ * are locked). Best effort when the cursor is out of reach.
  */
-export function dragLeg(bar: Busbar, stepIndex: number, along: number, shift: number): SketchChange {
+export function dragLeg(bar: Busbar, stepIndex: number, along: number, to: Vec2): SketchChange {
   const g0 = sketchGeometry(bar);
   const leg = g0.legs.find((l) => l.stepIndex === stepIndex);
   if (!leg) return { bar, ok: false };
-  const a = g0.vertices[leg.from];
-  const b = g0.vertices[leg.to];
+  const a = g0.center[leg.from];
+  const b = g0.center[leg.to];
   const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-  const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
   const tau = Math.max(0, Math.min(1, along / len));
   const pointOn = (g: SketchGeometry) => {
-    const p = g.vertices[leg.from];
-    const q = g.vertices[leg.to];
+    const p = g.center[leg.from];
+    const q = g.center[leg.to];
     return { x: p.x + (q.x - p.x) * tau, y: p.y + (q.y - p.y) * tau };
   };
-  const p0 = pointOn(g0);
   const locked = liveDims(bar, g0)
     .filter((d) => d.locked)
     .map((d) => dimTarget(bar, g0, d, d.value, 1000));
-  const target: Target = {
-    f: (g) => {
-      const p = pointOn(g);
-      return p.x * n.x + p.y * n.y;
-    },
-    value: p0.x * n.x + p0.y * n.y + shift,
-    weight: 1,
-  };
-  // The dragged leg keeps its own length.
-  const res = solve(bar, [...locked, target], new Set([leg.id]), 1e-6);
+  const follow: Target[] = [
+    { f: (g) => pointOn(g).x, value: to.x, weight: 1 },
+    { f: (g) => pointOn(g).y, value: to.y, weight: 1 },
+  ];
+  // The dragged leg itself changes its length only when nothing else can move the point (e.g. along itself).
+  const res = solve(bar, [...locked, ...follow], new Set(), 1e-3, new Map([[leg.id, 4]]));
+  const g1 = sketchGeometry(bar, res.steps);
+  if (locked.some((t) => Math.abs(t.f(g1) - t.value) > 0.05)) return { bar, ok: false };
   const steps = tidy(bar, bar.steps, res, locked);
   const moved = steps.some((s, i) => s !== bar.steps[i]);
   return { bar: { ...bar, steps }, ok: moved };

@@ -82,7 +82,11 @@ początku układu, osie X i Y przez A):
   to nie wystarcza – kąty), a wymiar zostaje na rysunku zablokowany.
 - **Kłódki** przy długościach, kątach (także w liście kroków) i wymiarach – zablokowane wartości
   się nie zmieniają; zablokowane wymiary są pilnowane także przy zmianie długości w liście.
-- **Przeciąganie odcinka** przesuwa go w poprzek, zmieniając sąsiednie odcinki.
+- **Linie odniesienia** (czerwone) leżą na zewnętrznej krawędzi szyny (przy wymiarach po
+  zewnętrznej), a punkty wymiarów to zewnętrzne ostre narożniki i końce na tej krawędzi.
+- **Przeciąganie odcinka** – chwycony punkt idzie za myszą/palcem: zmieniają się najpierw inne
+  długości, potem długość samego odcinka, a kąty dopiero gdy długości nie wystarczą albo są
+  zablokowane (przy zablokowanych kątach – tylko długości).
 Konflikt (zablokowany wymiar nie do utrzymania) jest pokazany na czerwono.
 
 ## Szafa (odniesienie)

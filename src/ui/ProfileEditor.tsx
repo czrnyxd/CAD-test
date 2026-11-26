@@ -284,7 +284,7 @@ export function ProfileEditor({
   // ------------------------------------------------------------ pointer: drag legs, pan, zoom, pick
   const gesture = useRef<
     | { kind: 'pan'; x: number; y: number; cx: number; cy: number; moved: boolean }
-    | { kind: 'leg'; step: number; start: Busbar; along: number; n: Vec2; x: number; y: number; moved: boolean }
+    | { kind: 'leg'; step: number; start: Busbar; along: number; p0: Vec2; x: number; y: number; moved: boolean; done: boolean }
     | null
   >(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -321,21 +321,14 @@ export function ProfileEditor({
     if (legEl && e.button === 0) {
       const step = Number(legEl.getAttribute('data-leg'));
       const leg = g.legs.find((l) => l.stepIndex === step)!;
-      const a = g.vertices[leg.from];
-      const b = g.vertices[leg.to];
+      const a = g.center[leg.from];
+      const b = g.center[leg.to];
       const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
       const w = toW(x, y);
-      const along = ((w.x - a.x) * (b.x - a.x) + (w.y - a.y) * (b.y - a.y)) / len;
-      gesture.current = {
-        kind: 'leg',
-        step,
-        start: bar,
-        along,
-        n: { x: -(b.y - a.y) / len, y: (b.x - a.x) / len },
-        x,
-        y,
-        moved: false,
-      };
+      const along = Math.max(0, Math.min(len, ((w.x - a.x) * (b.x - a.x) + (w.y - a.y) * (b.y - a.y)) / len));
+      // The grabbed point of the leg (on its centreline) – it follows the cursor.
+      const p0 = { x: a.x + ((b.x - a.x) * along) / len, y: a.y + ((b.y - a.y) * along) / len };
+      gesture.current = { kind: 'leg', step, start: bar, along, p0, x, y, moved: false, done: false };
       return;
     }
     gesture.current = { kind: 'pan', x, y, cx: v.cx, cy: v.cy, moved: false };
@@ -361,15 +354,23 @@ export function ProfileEditor({
       setView({ s: v.s, cx: gs.cx - (x - gs.x) / v.s, cy: gs.cy + (y - gs.y) / v.s });
       return;
     }
-    const dx = (x - gs.x) / v.s;
-    const dy = -(y - gs.y) / v.s;
-    const shift = Math.round(dx * gs.n.x + dy * gs.n.y);
+    const to = dragTarget(gs, x, y);
     cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(() => {
-      const res = dragLeg(gs.start, gs.step, gs.along, shift);
-      update(() => (res.ok ? res.bar : gs.start), false);
+      const res = dragLeg(gs.start, gs.step, gs.along, to);
+      // Out of reach of the locks: the bar stays where it last could be.
+      if (res.ok) {
+        gs.done = true;
+        update(() => res.bar, false);
+      }
     });
   };
+
+  /** Where the grabbed point should be (plane coordinates, whole mm). */
+  const dragTarget = (gs: { p0: Vec2; x: number; y: number }, x: number, y: number): Vec2 => ({
+    x: Math.round(gs.p0.x + (x - gs.x) / v.s),
+    y: Math.round(gs.p0.y - (y - gs.y) / v.s),
+  });
 
   const onUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId);
@@ -382,11 +383,13 @@ export function ProfileEditor({
       if (gs.moved) {
         // Finish with the exact final position, then put the whole drag in the undo history as one change.
         const { x, y } = local(e);
-        const shift = Math.round(((x - gs.x) / v.s) * gs.n.x - ((y - gs.y) / v.s) * gs.n.y);
-        const res = dragLeg(gs.start, gs.step, gs.along, shift);
-        update(() => (res.ok ? res.bar : gs.start), false);
+        const res = dragLeg(gs.start, gs.step, gs.along, dragTarget(gs, x, y));
+        if (res.ok) {
+          gs.done = true;
+          update(() => res.bar, false);
+        }
         commit(gs.start);
-        if (!res.ok && shift !== 0) onMessage('Ten odcinek nie może się przesunąć – sąsiednie długości są zablokowane.');
+        if (!gs.done) onMessage('Ten odcinek nie może się przesunąć – sąsiednie długości i kąty są zablokowane.');
       } else onSelect(gs.step === selected ? null : gs.step);
     } else if (!gs.moved) onSelect(null);
   };
@@ -529,8 +532,8 @@ export function ProfileEditor({
     const leg = g.legs[i];
     const s = bar.steps[leg.stepIndex];
     if (s.kind !== 'straight') return null;
-    const a = toS(g.vertices[leg.from]);
-    const b = toS(g.vertices[leg.to]);
+    const a = toS(g.center[leg.from]);
+    const b = toS(g.center[leg.to]);
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     // Beside the leg, on the side away from the next bend.
     const off = (T * v.s) / 2 + 26;
@@ -640,11 +643,20 @@ export function ProfileEditor({
             <polygon key={o.index} className={`sk-bar ${o.index === 2 ? 'is-second' : ''}`} points={poly(o.pts)} />
           ))}
           {/* Centreline through the virtual sharps */}
-          <polyline className="sk-center" points={poly(g.vertices)} />
+          {/* Reference lines (outer faces for outside dimensions) through the dimension points */}
+          {g.lines.map(([p, q], k) => {
+            const a = toS(p);
+            const b = toS(q);
+            // Extended a little past the ends, so the corners read as the crossing of two lines.
+            const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+            const ex = ((b.x - a.x) / len) * 24;
+            const ey = ((b.y - a.y) / len) * 24;
+            return <line key={k} className="sk-center" x1={a.x - ex} y1={a.y - ey} x2={b.x + ex} y2={b.y + ey} />;
+          })}
           {/* Grab areas of the legs (wide, invisible) */}
           {g.legs.map((l) => {
-            const a = toS(g.vertices[l.from]);
-            const b = toS(g.vertices[l.to]);
+            const a = toS(g.center[l.from]);
+            const b = toS(g.center[l.to]);
             return (
               <line
                 key={l.id}
@@ -837,7 +849,14 @@ export function ProfileEditor({
           </span>
         )}
         <span className="vf-mode">
-          Wymiary do <b>osi szyny</b>
+          Wymiary do{' '}
+          <b>
+            {bar.dimensionMode === 'outside'
+              ? 'zewnętrznej krawędzi'
+              : bar.dimensionMode === 'inside'
+                ? 'wewnętrznej krawędzi'
+                : 'osi szyny'}
+          </b>
         </span>
       </div>
     </div>

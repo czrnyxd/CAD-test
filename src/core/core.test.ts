@@ -672,12 +672,12 @@ describe('2D sketch and driving dimensions', () => {
     const bar = newBusbar(S40x10, [straight(200), bend(90, 'up', 10), straight(150)]);
     const g = sketchGeometry(bar);
     // Outside dimensions: the centreline sharp is T/2·tan(45°) = 5 mm inside the outside one.
-    expect(g.vertices[1].x).toBeCloseTo(195, 6);
-    expect(g.vertices[2].y).toBeCloseTo(145, 6);
+    expect(g.center[1].x).toBeCloseTo(195, 6);
+    expect(g.center[2].y).toBeCloseTo(145, 6);
     const path = buildPath(bar, analyze(bar, settings));
     const end = path.samples[path.samples.length - 1].p;
-    expect(end.x).toBeCloseTo(g.vertices[2].x, 4);
-    expect(end.y).toBeCloseTo(g.vertices[2].y, 4);
+    expect(end.x).toBeCloseTo(g.center[2].x, 4);
+    expect(end.y).toBeCloseTo(g.center[2].y, 4);
   });
 
   it('a driving dimension changes the free legs, locked ones stay', () => {
@@ -718,11 +718,11 @@ describe('2D sketch and driving dimensions', () => {
     const axis: SketchAxis = { id: 'a1', dir: 'v', at: 500 };
     const d: SketchDim = { id: 'd', type: 'h', a: { kind: 'axis', axis: 'a1' }, b: pt(bar, 1, 0), value: 0, locked: false };
     const b2 = withDims(bar, [d], [axis]);
-    const x = sketchGeometry(b2).vertices[2].x;
+    const x = sketchGeometry(b2).vertices[1].x;
     expect(measureDim(b2, sketchGeometry(b2), d)).toBeCloseTo(x - 500, 6);
     const res = setDimValue(b2, 'd', 150);
     expect(res.ok).toBe(true);
-    expect(sketchGeometry(res.bar).vertices[2].x).toBeCloseTo(350, 4); // left of the axis, as before
+    expect(sketchGeometry(res.bar).vertices[1].x).toBeCloseTo(350, 4); // left of the axis, as before
   });
 
   it('keeps locked dimensions when a leg is edited, and reports a conflict', () => {
@@ -742,11 +742,38 @@ describe('2D sketch and driving dimensions', () => {
 
   it('dragging a leg moves it across, changing the neighbouring legs', () => {
     const bar = Z();
-    // Middle leg goes up; its normal points to −x, so a shift of −50 moves it 50 mm to the right.
-    const res = dragLeg(bar, 2, 50, -50);
+    // Grab the middle leg 50 mm from its start and move the cursor 50 mm to the right.
+    const g = sketchGeometry(bar);
+    const p = g.center[g.legs[1].from];
+    const res = dragLeg(bar, 2, 50, { x: p.x + 50, y: p.y + 50 });
     expect(res.ok).toBe(true);
     const L = res.bar.steps.filter((s) => s.kind === 'straight').map((s) => (s as StraightStep).length);
     expect(L).toEqual([350, 100, 300]);
+    // The grabbed point is under the cursor.
+    const g2 = sketchGeometry(res.bar);
+    expect(g2.center[g2.legs[1].from].x).toBeCloseTo(p.x + 50, 3);
+  });
+
+  it('dragging with the lengths locked turns the bends instead', () => {
+    const bar = newBusbar(S40x10, [straight(300), bend(90, 'up', 10), straight(200)]);
+    const locked = { ...bar, steps: bar.steps.map((s) => (s.kind === 'straight' ? { ...s, locked: true } : s)) };
+    const g = sketchGeometry(locked);
+    const a = g.center[1];
+    // Grab the end of leg 2 and pull it to the right: only the angle can do that.
+    const res = dragLeg(locked, 2, 195, { x: a.x + 60, y: a.y + 180 });
+    expect(res.ok).toBe(true);
+    expect((res.bar.steps[1] as { angle: number }).angle).toBeLessThan(90);
+    expect((res.bar.steps[2] as StraightStep).length).toBe(200);
+  });
+
+  it('dimension points lie on the outer faces for outside dimensions', () => {
+    const bar = newBusbar(S40x10, [straight(200), bend(90, 'up', 10), straight(150)]);
+    const g = sketchGeometry(bar);
+    // Outer sharp at (200, −5): leg 1 measured 200 to it, leg 2 measured 150 from it.
+    expect(g.vertices[1].x).toBeCloseTo(200, 6);
+    expect(g.vertices[1].y).toBeCloseTo(-5, 6);
+    expect(g.vertices[0].y).toBeCloseTo(-5, 6);
+    expect(g.vertices[2].y - g.vertices[1].y).toBeCloseTo(150, 6);
   });
 
   it('reads a stored sketch and drops broken entries', () => {

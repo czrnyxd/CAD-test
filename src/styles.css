@@ -1510,9 +1510,9 @@ kbd {
 }
 .sk-center {
   fill: none;
-  stroke: var(--ink-2);
-  stroke-width: 1;
-  stroke-dasharray: 10 3 2 3;
+  stroke: #d03a2f;
+  stroke-width: 1.5;
+  stroke-dasharray: 12 3 2 3;
   pointer-events: none;
 }
 .sk-grab {
@@ -1634,6 +1634,10 @@ kbd {
 }
 .sk-bend .sk-lock:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+.sk-bend.is-sel {
+  background: var(--action);
+  border-color: var(--action);
 }
 .sk-bend.is-locked {
   background: var(--action);
