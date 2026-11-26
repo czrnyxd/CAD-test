@@ -1710,3 +1710,117 @@ kbd {
 .step-lock {
   flex: none;
 }
+
+/* 2D: dimensioning / new axis mode – clearly marked */
+.sk-canvas.tool-dim,
+.sk-canvas.tool-axis {
+  box-shadow: inset 0 0 0 4px var(--action);
+  background: color-mix(in srgb, var(--action) 4%, var(--surface-1));
+}
+.sk-modebar {
+  flex: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 8px 6px 14px;
+  background: var(--action);
+  color: var(--on-action);
+  font-size: 17px;
+}
+.sk-mode-cancel {
+  margin-left: auto;
+}
+.sk-mode-text b {
+  font-weight: 800;
+}
+.sk-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  opacity: 0.95;
+}
+.sk-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: 6px;
+  box-sizing: border-box;
+  border: 2px solid var(--on-action);
+}
+.sk-legend .lg-ref {
+  border-radius: 50%;
+  background: var(--on-action);
+}
+.sk-legend .lg-center {
+  transform: rotate(45deg) scale(0.85);
+}
+.sk-legend .lg-hole {
+  border-radius: 50%;
+}
+.sk-mode-cancel {
+  min-height: 40px;
+}
+.sk-cand {
+  fill: var(--surface-1);
+  stroke: var(--action);
+  stroke-width: 2;
+  pointer-events: none;
+}
+.sk-cand.k-ref {
+  fill: var(--action);
+  stroke: var(--surface-1);
+}
+.sk-cand.k-center {
+  stroke: #d03a2f;
+}
+.sk-cand.k-hole circle,
+.sk-cand.k-hole path {
+  fill: var(--surface-1);
+  stroke: var(--ink);
+  stroke-width: 1.8;
+}
+.sk-cand.is-hover {
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 4px rgba(11, 92, 213, 0.8));
+}
+.sk-cand.k-ref.is-hover {
+  fill: var(--warning);
+}
+.sk-rubber {
+  stroke: var(--action);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+  pointer-events: none;
+}
+.sk-first circle {
+  fill: none;
+  stroke: var(--warning);
+  stroke-width: 3;
+}
+.sk-axis.is-hover,
+.sk-axis.is-first {
+  stroke: var(--warning);
+  stroke-width: 3;
+}
+.sk-tip {
+  position: absolute;
+  z-index: 6;
+  transform: translate(14px, -130%);
+  pointer-events: none;
+  padding: 3px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: var(--surface-1);
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.sk-tip.is-first {
+  background: var(--warning);
+  color: var(--on-warning);
+  transform: translate(-50%, -170%);
+  font-size: 16px;
+}

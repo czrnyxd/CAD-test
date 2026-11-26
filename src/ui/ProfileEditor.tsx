@@ -1,7 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { fmt } from '../core/analyze';
 import type { Assembly } from '../core/assembly';
-import { newId, type Busbar, type SketchAxis, type SketchDim, type SketchRef, type Step } from '../core/model';
+import {
+  newId,
+  type Busbar,
+  type SketchAxis,
+  type SketchDim,
+  type SketchPointAt,
+  type SketchRef,
+  type Step,
+} from '../core/model';
 import {
   allAxes,
   axisName,
@@ -9,7 +17,7 @@ import {
   dragPoint,
   liveDims,
   measureDim,
-  refVertex,
+  refPoint,
   setDimValue,
   sketchGeometry,
   sketchOf,
@@ -70,12 +78,43 @@ export function ProfileEditor({
   const [first, setFirst] = useState<Pick | null>(null);
   const [pop, setPop] = useState<Popover | null>(null);
   const [hover, setHover] = useState<number | null>(null);
+  /** Dimensioning: snap point under the cursor, and the cursor (screen px) for the line from point 1. */
+  const [hoverCand, setHoverCand] = useState<number | null>(null);
+  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  const [hoverAxis, setHoverAxis] = useState<string | null>(null);
 
   const g = useMemo(() => sketchGeometry(bar), [bar]);
   const dims = useMemo(() => liveDims(bar, g), [bar, g]);
   const conflicts = useMemo(() => dimConflicts(bar, g), [bar, g]);
   const axes = allAxes(bar);
   const T = bar.section.thickness;
+
+  /** Every point a dimension can start or end at: corners and ends on both faces, the centreline, hole centres. */
+  const cands = useMemo(() => {
+    const out: { ref: SketchRef; p: Vec2; kind: 'ref' | 'face' | 'center' | 'hole'; label: string }[] = [];
+    const last = g.vertices.length - 1;
+    const where = (v: number) =>
+      v === 0 ? 'koniec A' : v === last ? 'koniec B' : `gięcie G${g.bends.findIndex((b) => b.vertex === v) + 1}`;
+    const refSide = bar.dimensionMode === 'outside' ? 'out' : bar.dimensionMode === 'inside' ? 'in' : 'center';
+    g.vertices.forEach((p, v) => {
+      const base = vertexRef(g, v);
+      if (!base || base.kind !== 'pt') return;
+      const corner = v === 0 || v === last ? 'narożnik' : 'ostry narożnik';
+      const items: [SketchPointAt, Vec2, string][] = [
+        ['out', g.outer[v], `${where(v)} – ${corner} zewnętrzny`],
+        ['in', g.inner[v], `${where(v)} – ${corner} wewnętrzny`],
+        ['center', g.center[v], `${where(v)} – oś szyny`],
+      ];
+      for (const [at, q, label] of items) {
+        if (at === refSide) out.push({ ref: base, p, kind: 'ref', label });
+        else out.push({ ref: { ...base, at }, p: q, kind: at === 'center' ? 'center' : 'face', label });
+      }
+    });
+    let no = 0;
+    for (const h of g.holes)
+      out.push({ ref: { kind: 'hole', leg: h.leg, hole: h.hole }, p: h.p, kind: 'hole', label: `środek otworu O${++no}` });
+    return out;
+  }, [g, bar.dimensionMode]);
 
   // Outline of every bar (centreline ± T/2 in the plane), from the same path as the 3D model.
   const outlines = useMemo(
@@ -178,12 +217,18 @@ export function ProfileEditor({
     }
     return best as { a: SketchAxis; d: number } | null;
   };
+  const nearestCand = (x: number, y: number) => {
+    let best: { i: number; d: number } | null = null;
+    cands.forEach((c, i) => {
+      const s = toS(c.p);
+      const d = Math.hypot(s.x - x, s.y - y);
+      if (d < PICK_PX && (!best || d < best.d - 0.5)) best = { i, d };
+    });
+    return best as { i: number; d: number } | null;
+  };
   const pickAt = (x: number, y: number): Pick | null => {
-    const vtx = nearestVertex(x, y);
-    if (vtx) {
-      const ref = vertexRef(g, vtx.i);
-      if (ref) return { ref, at: g.vertices[vtx.i] };
-    }
+    const c = nearestCand(x, y);
+    if (c) return { ref: cands[c.i].ref, at: cands[c.i].p };
     const ax = nearestAxis(x, y);
     if (ax) return { ref: { kind: 'axis', axis: ax.a.id }, at: toW(x, y) };
     return null;
@@ -227,7 +272,7 @@ export function ProfileEditor({
       onMessage('Odległość między osiami ustawiasz położeniem osi – kliknij jej opis.');
       return;
     }
-    if (a.ref.kind === 'pt' && b.ref.kind === 'pt' && refVertex(g, a.ref) === refVertex(g, b.ref)) return;
+    if (a.ref.kind !== 'axis' && b.ref.kind !== 'axis' && Math.hypot(a.at.x - b.at.x, a.at.y - b.at.y) < 0.01) return;
     const axis = [a, b].find(isAxis);
     if (axis) {
       const dir = axes.find((q) => q.id === (axis.ref as { axis: string }).axis)!.dir;
@@ -326,6 +371,8 @@ export function ProfileEditor({
       return;
     }
     setPop(null);
+    // Picking must not move the focus away from the value field it opens.
+    if (tool !== 'none') e.preventDefault();
     if (tool === 'dim') {
       const p = pickAt(x, y);
       if (!p) return;
@@ -375,8 +422,12 @@ export function ProfileEditor({
     }
     const gs = gesture.current;
     if (!gs) {
-      if (tool === 'dim') setHover(nearestVertex(x, y)?.i ?? null);
-      else {
+      if (tool === 'dim') {
+        const c = nearestCand(x, y);
+        setHoverCand(c ? c.i : null);
+        setHoverAxis(c ? null : (nearestAxis(x, y)?.a.id ?? null));
+        setCursor({ x, y });
+      } else {
         const end = endAt(x, y);
         setHover(end === 'A' ? 0 : end === 'B' ? g.vertices.length - 1 : null);
       }
@@ -501,7 +552,7 @@ export function ProfileEditor({
   let hRow = 0;
   let vRow = 0;
   const dimShapes = dims.map((d) => {
-    const pt = (r: SketchRef) => (r.kind === 'pt' ? toS(g.vertices[refVertex(g, r)!]) : null);
+    const pt = (r: SketchRef) => (r.kind === 'axis' ? null : toS(refPoint(g, r)!));
     const axisPos = (r: SketchRef) => {
       const a = axes.find((q) => q.id === (r as { axis: string }).axis)!;
       return toS({ x: a.at, y: a.at });
@@ -530,7 +581,7 @@ export function ProfileEditor({
       };
     }
     const horiz = d.type === 'h';
-    const ends = [d.a, d.b].map((r) => (r.kind === 'pt' ? pt(r)! : axisPos(r)));
+    const ends = [d.a, d.b].map((r) => (r.kind !== 'axis' ? pt(r)! : axisPos(r)));
     if (horiz) {
       const y = bbS.a.y - 46 - 40 * hRow++;
       const xa = ends[0].x;
@@ -668,6 +719,43 @@ export function ProfileEditor({
           Wymiar
         </button>
       </div>
+      {tool !== 'none' && (
+        <div className="sk-modebar" role="status">
+          <Icon name={tool === 'dim' ? 'dims' : 'axis'} />
+          <span className="sk-mode-text">
+            {tool === 'dim' ? (
+              <>
+                <b>Wymiarowanie</b> · krok {first ? 2 : 1} z 2:{' '}
+                {first ? 'kliknij drugi punkt albo oś' : 'kliknij pierwszy punkt albo oś'}
+              </>
+            ) : (
+              <>
+                <b>Nowa oś</b> · kliknij miejsce albo punkt szyny
+              </>
+            )}
+          </span>
+          {tool === 'dim' && (
+            <span className="sk-legend">
+              <i className="lg-ref" /> narożnik{' '}
+              {bar.dimensionMode === 'outside' ? 'zewn.' : bar.dimensionMode === 'inside' ? 'wewn.' : 'osi'}
+              <i className="lg-face" /> druga krawędź
+              <i className="lg-center" /> oś szyny
+              <i className="lg-hole" /> otwór
+            </span>
+          )}
+          <button
+            className="bb-btn bb-btn--secondary sk-mode-cancel"
+            onClick={() => {
+              setTool('none');
+              setFirst(null);
+              setPop(null);
+            }}
+          >
+            <Icon name="close" />
+            Zakończ
+          </button>
+        </div>
+      )}
       <div
         className={`bb-viewcanvas sk-canvas tool-${tool} ${tool === 'none' && hover !== null ? 'over-end' : ''}`}
         ref={hostRef}
@@ -684,9 +772,23 @@ export function ProfileEditor({
             const s = toS({ x: a.at, y: a.at });
             const base = a.id === 'X' || a.id === 'Y';
             return a.dir === 'v' ? (
-              <line key={a.id} className={`sk-axis ${base ? 'is-base' : ''}`} x1={s.x} x2={s.x} y1={0} y2={size.h} />
+              <line
+                key={a.id}
+                className={`sk-axis ${base ? 'is-base' : ''} ${tool === 'dim' && hoverAxis === a.id ? 'is-hover' : ''} ${first?.ref.kind === 'axis' && first.ref.axis === a.id ? 'is-first' : ''}`}
+                x1={s.x}
+                x2={s.x}
+                y1={0}
+                y2={size.h}
+              />
             ) : (
-              <line key={a.id} className={`sk-axis ${base ? 'is-base' : ''}`} x1={0} x2={size.w} y1={s.y} y2={s.y} />
+              <line
+                key={a.id}
+                className={`sk-axis ${base ? 'is-base' : ''} ${tool === 'dim' && hoverAxis === a.id ? 'is-hover' : ''} ${first?.ref.kind === 'axis' && first.ref.axis === a.id ? 'is-first' : ''}`}
+                x1={0}
+                x2={size.w}
+                y1={s.y}
+                y2={s.y}
+              />
             );
           })}
           {/* Bars */}
@@ -738,21 +840,49 @@ export function ProfileEditor({
               />
             </g>
           ))}
+          {/* Dimensioning: the line from point 1 to the cursor, then every snap point */}
+          {tool === 'dim' && first && cursor && (
+            <line className="sk-rubber" x1={toS(first.at).x} y1={toS(first.at).y} x2={cursor.x} y2={cursor.y} />
+          )}
+          {tool === 'dim' &&
+            cands.map((c, i) => {
+              const q = toS(c.p);
+              const cls = `sk-cand k-${c.kind} ${hoverCand === i ? 'is-hover' : ''}`;
+              if (c.kind === 'face') return <rect key={i} className={cls} x={q.x - 4.5} y={q.y - 4.5} width={9} height={9} />;
+              if (c.kind === 'center')
+                return (
+                  <path key={i} className={cls} d={`M${q.x} ${q.y - 6}L${q.x + 6} ${q.y}L${q.x} ${q.y + 6}L${q.x - 6} ${q.y}Z`} />
+                );
+              if (c.kind === 'hole')
+                return (
+                  <g key={i} className={cls}>
+                    <circle cx={q.x} cy={q.y} r={6} />
+                    <path d={`M${q.x - 6} ${q.y}H${q.x + 6}M${q.x} ${q.y - 6}V${q.y + 6}`} />
+                  </g>
+                );
+              return <circle key={i} className={cls} cx={q.x} cy={q.y} r={7} />;
+            })}
+          {tool === 'dim' && first && (
+            <g className="sk-first">
+              <circle cx={toS(first.at).x} cy={toS(first.at).y} r={11} />
+            </g>
+          )}
           {/* Points */}
-          {g.vertices.map((p, i) => {
-            const s = toS(p);
-            const end = i === 0 || i === g.vertices.length - 1;
-            const isFirst = first?.ref.kind === 'pt' && refVertex(g, first.ref) === i;
-            return (
-              <circle
-                key={i}
-                className={`sk-pt ${end ? 'is-end' : ''} ${hover === i ? 'is-hover' : ''} ${isFirst ? 'is-first' : ''}`}
-                cx={s.x}
-                cy={s.y}
-                r={tool === 'dim' ? 7 : end ? 8 : 4.5}
-              />
-            );
-          })}
+          {tool !== 'dim' &&
+            g.vertices.map((p, i) => {
+              const s = toS(p);
+              const end = i === 0 || i === g.vertices.length - 1;
+              const isFirst = false;
+              return (
+                <circle
+                  key={i}
+                  className={`sk-pt ${end ? 'is-end' : ''} ${hover === i ? 'is-hover' : ''} ${isFirst ? 'is-first' : ''}`}
+                  cx={s.x}
+                  cy={s.y}
+                  r={end ? 8 : 4.5}
+                />
+              );
+            })}
           <defs>
             <marker
               id="sk-arrow"
@@ -841,6 +971,16 @@ export function ProfileEditor({
           )}
         </div>
 
+        {tool === 'dim' && hoverCand !== null && cands[hoverCand] && cursor && (
+          <div className="sk-tip" style={{ left: toS(cands[hoverCand].p).x, top: toS(cands[hoverCand].p).y }}>
+            {cands[hoverCand].label}
+          </div>
+        )}
+        {first && tool === 'dim' && (
+          <div className="sk-tip is-first" style={{ left: toS(first.at).x, top: toS(first.at).y }}>
+            1
+          </div>
+        )}
         {pop && (
           <div className="sk-pop" style={{ left: pop.x, top: pop.y }}>
             {pop.kind === 'dimType' ? (

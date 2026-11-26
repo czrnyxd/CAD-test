@@ -183,8 +183,12 @@ function sanitizeSketch(sk: Obj): Sketch {
   const ref = (r: unknown): SketchRef | null => {
     if (!isObj(r)) return null;
     if (r.kind === 'axis' && typeof r.axis === 'string') return { kind: 'axis', axis: r.axis };
-    if (r.kind === 'pt' && typeof r.leg === 'string' && (r.end === 0 || r.end === 1))
-      return { kind: 'pt', leg: r.leg, end: r.end };
+    if (r.kind === 'pt' && typeof r.leg === 'string' && (r.end === 0 || r.end === 1)) {
+      const at = r.at === 'out' || r.at === 'in' || r.at === 'center' ? r.at : undefined;
+      return at ? { kind: 'pt', leg: r.leg, end: r.end, at } : { kind: 'pt', leg: r.leg, end: r.end };
+    }
+    if (r.kind === 'hole' && typeof r.leg === 'string' && typeof r.hole === 'string')
+      return { kind: 'hole', leg: r.leg, hole: r.hole };
     return null;
   };
   const dims: SketchDim[] = [];

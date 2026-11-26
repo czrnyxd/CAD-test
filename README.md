@@ -78,9 +78,12 @@ początku układu, osie X i Y przez A; przy wymiarach po zewnętrznej zewnętrzn
 pierwszego odcinka leży na osi X):
 - **Oś** – dodaje pionową lub poziomą oś przez kliknięte miejsce albo punkt szyny; położenie
   zmienia się kliknięciem w jej opis.
-- **Wymiar** – kliknij dwa punkty (kropki = ostre narożniki osi szyny) albo punkt i oś, wybierz
-  poziomy / pionowy / po prostej i wpisz wartość. Szyna sama zmienia odblokowane długości (a gdy
-  to nie wystarcza – kąty), a wymiar zostaje na rysunku zablokowany.
+- **Wymiar** – tryb wymiarowania jest wyraźnie oznaczony (niebieski pasek „Wymiarowanie · krok
+  1 z 2”, ramka rysunku, linia od pierwszego punktu do kursora, nazwa punktu pod kursorem).
+  Punkty do wyboru: narożniki zewnętrzne i wewnętrzne (także ostre narożniki gięć), punkty na osi
+  szyny, środki otworów oraz osie. Wybierz poziomy / pionowy / po prostej i wpisz wartość. Szyna
+  sama zmienia odblokowane długości (a gdy to nie wystarcza – kąty); wymiar do otworu przesuwa
+  otwór. Wymiar zostaje na rysunku zablokowany.
 - **Kłódki** przy długościach, kątach (także w liście kroków) i wymiarach – zablokowane wartości
   się nie zmieniają; zablokowane wymiary są pilnowane także przy zmianie długości w liście.
 - **Linie odniesienia** (czerwone) leżą na zewnętrznej krawędzi szyny (przy wymiarach po

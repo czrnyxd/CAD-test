@@ -1,5 +1,5 @@
 import { setback } from './bending';
-import type { BendStep, Busbar, Sketch, SketchAxis, SketchDim, SketchRef, Step } from './model';
+import type { BendStep, Busbar, Sketch, SketchAxis, SketchDim, SketchRef, Step, StraightStep } from './model';
 
 /**
  * 2D sketch of a bar: its centreline as a polyline of virtual sharps in the bending plane, the
@@ -46,6 +46,11 @@ export interface SketchGeometry {
   vertices: Vec2[];
   /** Centreline virtual sharps, same indices as vertices. */
   center: Vec2[];
+  /** Outer and inner face points (sharp corners, end corners), same indices as vertices. */
+  outer: Vec2[];
+  inner: Vec2[];
+  /** Centres of the holes (on the centreline). */
+  holes: { leg: string; hole: string; p: Vec2 }[];
   /** Per straight step: its index, id and the vertices at its ends. */
   legs: { stepIndex: number; id: string; from: number; to: number }[];
   /** Per valid bend: the vertex it is at. */
@@ -94,19 +99,34 @@ export function sketchGeometry(bar: Busbar, steps: Step[] = bar.steps): SketchGe
   // Normal of a leg pointing away from the centre of a bend: a bend up turns left, so outward is right.
   const outward = (u: Vec2, sign: number): Vec2 => (sign > 0 ? { x: u.y, y: -u.x } : { x: -u.y, y: u.x });
   const add = (p: Vec2, n: Vec2, k: number) => ({ x: p.x + n.x * k, y: p.y + n.y * k });
-  const vertices = center.map((c, v) => {
+  /** Point at offset `off` from the centreline towards the outside of the bend (negative: inside). */
+  const faceAt = (c: Vec2, v: number, off: number): Vec2 => {
     const sign = bendSign[v];
     if (sign) {
-      // Intersection of the two offset faces: c + e·(n1 + n2) / (1 + n1·n2).
+      // Intersection of the two offset faces: c + off·(n1 + n2) / (1 + n1·n2).
       const n1 = outward(dirs[v - 1], sign);
       const n2 = outward(dirs[v], sign);
-      const k = e / (1 + n1.x * n2.x + n1.y * n2.y);
+      const k = off / (1 + n1.x * n2.x + n1.y * n2.y);
       return { x: c.x + (n1.x + n2.x) * k, y: c.y + (n1.y + n2.y) * k };
     }
-    // Free end: on the reference face of the bend at the other end of its leg.
+    // Free end: on the face of the bend at the other end of its leg (no bend: the right-hand face).
     const legDir = v === 0 ? dirs[0] : dirs[v - 1];
-    const endSign = (v === 0 ? bendSign[1] : bendSign[v - 1]) ?? 0;
-    return legDir && endSign ? add(c, outward(legDir, endSign), e) : { ...c };
+    if (!legDir) return { ...c };
+    const endSign = (v === 0 ? bendSign[1] : bendSign[v - 1]) ?? 1;
+    return add(c, outward(legDir, endSign), off);
+  };
+  const outer = center.map((c, v) => faceAt(c, v, T / 2));
+  const inner = center.map((c, v) => faceAt(c, v, -T / 2));
+  const vertices = e > 0 ? outer : e < 0 ? inner : center.map((c) => ({ ...c }));
+  // Centres of the holes, on the centreline: their position is measured from the leg's dimension point.
+  const holes: SketchGeometry['holes'] = [];
+  legs.forEach((l, k) => {
+    const st = steps[l.stepIndex];
+    if (st.kind !== 'straight' || !st.holes) return;
+    const u = dirs[k];
+    const c0 = center[l.from];
+    const s0 = (vertices[l.from].x - c0.x) * u.x + (vertices[l.from].y - c0.y) * u.y;
+    st.holes.forEach((h) => holes.push({ leg: l.id, hole: h.id, p: add(c0, u, s0 + h.position) }));
   });
   // Reference lines: each leg on the reference face of each bend at its ends (both faces when they differ).
   const lines: [Vec2, Vec2][] = [];
@@ -125,6 +145,9 @@ export function sketchGeometry(bar: Busbar, steps: Step[] = bar.steps): SketchGe
   return {
     vertices: vertices.map(shift),
     center: center.map(shift),
+    outer: outer.map(shift),
+    inner: inner.map(shift),
+    holes: holes.map((h) => ({ ...h, p: shift(h.p) })),
     legs,
     bends,
     lines: lines.map(([p, q]) => [shift(p), shift(q)] as [Vec2, Vec2]),
@@ -139,6 +162,15 @@ export function refVertex(g: SketchGeometry, r: SketchRef): number | null {
   return leg ? (r.end === 0 ? leg.from : leg.to) : null;
 }
 
+/** Position of a point reference (end, corner, hole centre), or null when it no longer exists. */
+export function refPoint(g: SketchGeometry, r: SketchRef): Vec2 | null {
+  if (r.kind === 'hole') return g.holes.find((h) => h.leg === r.leg && h.hole === r.hole)?.p ?? null;
+  const v = refVertex(g, r);
+  if (v === null) return null;
+  if (r.kind !== 'pt' || !r.at) return g.vertices[v];
+  return (r.at === 'out' ? g.outer : r.at === 'in' ? g.inner : g.center)[v];
+}
+
 /** Reference to a vertex (the end of a leg that ends there). */
 export function vertexRef(g: SketchGeometry, v: number): SketchRef | null {
   const leg = g.legs.find((l) => l.to === v) ?? g.legs.find((l) => l.from === v);
@@ -149,7 +181,7 @@ export function vertexRef(g: SketchGeometry, v: number): SketchRef | null {
 /** Is the dimension still usable (its points and axes exist, the type fits the references)? */
 export function dimValid(bar: Busbar, g: SketchGeometry, d: SketchDim): boolean {
   const axes = allAxes(bar);
-  const ok = (r: SketchRef) => (r.kind === 'pt' ? refVertex(g, r) !== null : axes.some((a) => a.id === r.axis));
+  const ok = (r: SketchRef) => (r.kind === 'axis' ? axes.some((a) => a.id === r.axis) : refPoint(g, r) !== null);
   if (!ok(d.a) || !ok(d.b)) return false;
   const axisDir = (r: SketchRef) => (r.kind === 'axis' ? axes.find((a) => a.id === r.axis)!.dir : null);
   const da = axisDir(d.a);
@@ -165,12 +197,12 @@ export function measureDim(bar: Busbar, g: SketchGeometry, d: SketchDim): number
   const axes = allAxes(bar);
   const coord = (r: SketchRef, k: 'x' | 'y') => {
     if (r.kind === 'axis') return axes.find((a) => a.id === r.axis)!.at;
-    return g.vertices[refVertex(g, r)!][k];
+    return refPoint(g, r)![k];
   };
   if (d.type === 'h') return coord(d.b, 'x') - coord(d.a, 'x');
   if (d.type === 'v') return coord(d.b, 'y') - coord(d.a, 'y');
-  const a = g.vertices[refVertex(g, d.a)!];
-  const b = g.vertices[refVertex(g, d.b)!];
+  const a = refPoint(g, d.a)!;
+  const b = refPoint(g, d.b)!;
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
@@ -183,8 +215,20 @@ export function liveDims(bar: Busbar, g = sketchGeometry(bar)): SketchDim[] {
 
 interface Param {
   step: number;
-  kind: 'len' | 'ang';
+  kind: 'len' | 'ang' | 'hole';
+  /** For 'hole': id of the hole whose position (along the leg) is a variable. */
+  hole?: string;
 }
+
+/** Holes that the given dimensions measure to – only those may be moved by the solver. */
+function dimHoles(dims: SketchDim[]): Set<string> {
+  const out = new Set<string>();
+  for (const d of dims) for (const r of [d.a, d.b]) if (r.kind === 'hole') out.add(r.hole);
+  return out;
+}
+
+/** Changing a hole position costs half as much as a leg: a dimension to a hole moves the hole. */
+const HOLE_COST = 0.5;
 
 interface Target {
   f: (g: SketchGeometry) => number;
@@ -199,6 +243,7 @@ const ANGLE_COST = 1000;
 /** Smallest allowed value of a parameter (a leg must keep a straight part, an angle stays in 0.5…179.5°). */
 function lowerBound(bar: Busbar, steps: Step[], p: Param): number {
   if (p.kind === 'ang') return 0.5;
+  if (p.kind === 'hole') return 0;
   const T = bar.section.thickness;
   const sb = (s: Step | undefined) => (validBend(s) ? setback(s.angle, s.radius, T, bar.dimensionMode) : 0);
   return sb(steps[p.step - 1]) + sb(steps[p.step + 1]) + 1;
@@ -206,13 +251,17 @@ function lowerBound(bar: Busbar, steps: Step[], p: Param): number {
 
 function getP(steps: Step[], p: Param): number {
   const s = steps[p.step];
+  if (p.kind === 'hole') return (s as StraightStep).holes!.find((h) => h.id === p.hole)!.position;
   return p.kind === 'len' ? (s as { length: number }).length : (s as BendStep).angle;
 }
 
 function withValues(steps: Step[], params: Param[], x: number[]): Step[] {
   const out = steps.slice();
   params.forEach((p, k) => {
-    out[p.step] = (p.kind === 'len' ? { ...out[p.step], length: x[k] } : { ...out[p.step], angle: x[k] }) as Step;
+    const s = out[p.step];
+    if (p.kind === 'hole' && s.kind === 'straight')
+      out[p.step] = { ...s, holes: (s.holes ?? []).map((h) => (h.id === p.hole ? { ...h, position: x[k] } : h)) };
+    else out[p.step] = (p.kind === 'len' ? { ...s, length: x[k] } : { ...s, angle: x[k] }) as Step;
   });
   return out;
 }
@@ -253,11 +302,16 @@ function solve(
   damping = 1e-9,
   /** Extra cost of changing particular steps (by id), × the normal cost. */
   cost: Map<string, number> = new Map(),
+  /** Holes (by id) whose positions may change. */
+  holes: Set<string> = new Set(),
 ): SolveResult {
   const steps = bar.steps;
   const params: Param[] = [];
   steps.forEach((s, i) => {
-    if (s.locked || fixed.has(s.id)) return;
+    if (fixed.has(s.id)) return;
+    if (s.kind === 'straight')
+      for (const h of s.holes ?? []) if (holes.has(h.id)) params.push({ step: i, kind: 'hole', hole: h.id });
+    if (s.locked) return;
     if (s.kind === 'straight') params.push({ step: i, kind: 'len' });
     else if (validBend(s)) params.push({ step: i, kind: 'ang' });
   });
@@ -271,7 +325,9 @@ function solve(
   if (!targets.length) return { steps, ok: true, error: 0 };
   let r = residual(x);
   if (!params.length) return { steps, ok: worst(r) < 0.01, error: worst(r) };
-  const scale = params.map((p) => (p.kind === 'ang' ? 1 / ANGLE_COST : 1) / (cost.get(steps[p.step].id) ?? 1));
+  const scale = params.map(
+    (p) => (p.kind === 'ang' ? 1 / ANGLE_COST : p.kind === 'hole' ? 1 / HOLE_COST : 1) / (cost.get(steps[p.step].id) ?? 1),
+  );
   const sw = targets.map((t) => Math.sqrt(t.weight));
   for (let it = 0; it < 60 && worst(r) > 1e-4; it++) {
     // Jacobian (central differences), weighted rows, scaled columns.
@@ -338,14 +394,26 @@ function dimTarget(bar: Busbar, g0: SketchGeometry, d: SketchDim, value = d.valu
 const round = (v: number, step: number) => Math.round(v / step) * step;
 
 /** Rounded values (whole mm, 0.1°) when they still keep the locked dimensions. */
-function tidy(bar: Busbar, before: Step[], res: SolveResult, keep: Target[]): Step[] {
-  const val = (s: Step) => (s.kind === 'straight' ? s.length : s.angle);
-  const changed = res.steps.map((s, i) => Math.abs(val(s) - val(before[i])) > 1e-6);
+function tidy(bar: Busbar, before: Step[], res: SolveResult, keep: Target[], holes: Set<string> = new Set()): Step[] {
+  // Values that can change: length and hole positions of a leg, angle of a bend.
+  const vals = (s: Step) => (s.kind === 'straight' ? [s.length, ...(s.holes ?? []).map((h) => h.position)] : [s.angle]);
+  const diff = (s: Step, b: Step) => {
+    const a = vals(s);
+    const c = vals(b);
+    return a.reduce((m, v, k) => Math.max(m, Math.abs(v - (c[k] ?? v))), 0);
+  };
+  const changed = res.steps.map((s, i) => diff(s, before[i]) > 1e-6);
   const roundStep = (s: Step, i: number): Step => {
     if (!changed[i]) return before[i];
-    const v = s.kind === 'straight' ? round(s.length, 1) : round(s.angle, 0.1);
-    if (v === val(before[i])) return before[i];
-    return (s.kind === 'straight' ? { ...s, length: v } : { ...s, angle: v }) as Step;
+    const r =
+      s.kind === 'straight'
+        ? {
+            ...s,
+            length: round(s.length, 1),
+            ...(s.holes ? { holes: s.holes.map((h) => ({ ...h, position: round(h.position, 1) })) } : {}),
+          }
+        : { ...s, angle: round(s.angle, 0.1) };
+    return diff(r, before[i]) === 0 ? before[i] : r;
   };
   const rounded = res.steps.map(roundStep);
   const fits = (steps: Step[]) => {
@@ -355,17 +423,23 @@ function tidy(bar: Busbar, before: Step[], res: SolveResult, keep: Target[]): St
   if (fits(rounded)) return rounded;
   // Whole numbers everywhere but one step, which takes the remainder (the most changed one first).
   const order = res.steps
-    .map((s, i) => ({ i, d: Math.abs(val(s) - val(before[i])) }))
+    .map((s, i) => ({ i, d: diff(s, before[i]) }))
     .filter((o) => changed[o.i])
     .sort((a, b) => b.d - a.d);
   for (const { i } of order) {
     const trial = rounded.slice();
     trial[i] = res.steps[i];
     const fixed = new Set(bar.steps.filter((_, k) => k !== i).map((st) => st.id));
-    const r = solve({ ...bar, steps: trial }, keep, fixed);
+    const r = solve({ ...bar, steps: trial }, keep, fixed, 1e-9, new Map(), holes);
     if (r.ok)
       return r.steps.map((st, k) =>
-        k === i ? { ...st, ...(st.kind === 'straight' ? { length: round(st.length, 0.01) } : {}) } : st,
+        k === i && st.kind === 'straight'
+          ? {
+              ...st,
+              length: round(st.length, 0.01),
+              ...(st.holes ? { holes: st.holes.map((h) => ({ ...h, position: round(h.position, 0.01) })) } : {}),
+            }
+          : st,
       ) as Step[];
   }
   return res.steps.map((s, i) => (changed[i] ? s : before[i]));
@@ -390,9 +464,10 @@ export function setDimValue(bar: Busbar, dimId: string, value: number): SketchCh
     dimTarget(bar, g, d, value),
     ...dims.filter((x) => x.locked && x.id !== dimId).map((x) => dimTarget(bar, g, x)),
   ];
-  const res = solve(bar, targets);
+  const holes = dimHoles(dims);
+  const res = solve(bar, targets, new Set(), 1e-9, new Map(), holes);
   if (!res.ok) return { bar, ok: false, message: BLOCKED };
-  const steps = tidy(bar, bar.steps, res, targets);
+  const steps = tidy(bar, bar.steps, res, targets, holes);
   const sk = sketchOf(bar);
   return {
     ok: true,
@@ -411,9 +486,10 @@ export function keepLockedDims(bar: Busbar, changedIds: Set<string>): SketchChan
   if (!locked.length) return { bar, ok: true };
   const targets = locked.map((d) => dimTarget(bar, g, d));
   if (targets.every((t) => Math.abs(t.f(g) - t.value) < 0.01)) return { bar, ok: true };
-  const res = solve(bar, targets, changedIds);
+  const holes = dimHoles(locked);
+  const res = solve(bar, targets, changedIds, 1e-9, new Map(), holes);
   if (!res.ok) return { bar, ok: false, message: 'Zablokowane wymiary nie mogą zostać zachowane – są zaznaczone na czerwono.' };
-  return { bar: { ...bar, steps: tidy(bar, bar.steps, res, targets) }, ok: true };
+  return { bar: { ...bar, steps: tidy(bar, bar.steps, res, targets, holes) }, ok: true };
 }
 
 /**

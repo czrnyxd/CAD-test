@@ -69,8 +69,14 @@ export interface SketchAxis {
   at: number;
 }
 
-/** End of a leg (its centreline virtual sharp) or a reference axis. */
-export type SketchRef = { kind: 'pt'; leg: string; end: 0 | 1 } | { kind: 'axis'; axis: string };
+/** Which point at a leg end: outer face, inner face or centreline (default: the dimension point of the project). */
+export type SketchPointAt = 'out' | 'in' | 'center';
+
+/** End of a leg (a sharp corner or end of the bar), the centre of a hole, or a reference axis. */
+export type SketchRef =
+  | { kind: 'pt'; leg: string; end: 0 | 1; at?: SketchPointAt }
+  | { kind: 'hole'; leg: string; hole: string }
+  | { kind: 'axis'; axis: string };
 
 export interface SketchDim {
   id: string;

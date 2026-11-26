@@ -794,6 +794,38 @@ describe('2D sketch and driving dimensions', () => {
     expect((res2.bar.steps[1] as { angle: number }).angle).toBeCloseTo(60, 0);
   });
 
+  it('measures from the centreline, the inner face and hole centres', () => {
+    const bar = newBusbar(S40x10, [
+      straight(200, [{ position: 50, diameter: 13, slot: 0, offset: 0 }]),
+      bend(90, 'up', 10),
+      straight(150),
+    ]);
+    const g = sketchGeometry(bar);
+    const leg1 = bar.steps[0].id;
+    const leg2 = bar.steps[2].id;
+    const hole = (bar.steps[0] as StraightStep).holes![0].id;
+    const dim = (a: SketchRef, b: SketchRef, type: SketchDim['type'] = 'h'): SketchDim => ({
+      id: 'd',
+      type,
+      a,
+      b,
+      value: 0,
+      locked: false,
+    });
+    // Hole 50 mm from end A, on the centreline 5 mm above the outer face.
+    expect(measureDim(bar, g, dim({ kind: 'axis', axis: 'Y' }, { kind: 'hole', leg: leg1, hole }))).toBeCloseTo(50, 6);
+    expect(measureDim(bar, g, dim({ kind: 'axis', axis: 'X' }, { kind: 'hole', leg: leg1, hole }, 'v'))).toBeCloseTo(5, 6);
+    // Inner sharp of the bend: 10 mm inside the outer one in both directions.
+    expect(measureDim(bar, g, dim({ kind: 'pt', leg: leg1, end: 1 }, { kind: 'pt', leg: leg1, end: 1, at: 'in' }))).toBeCloseTo(
+      -10,
+      6,
+    );
+    expect(measureDim(bar, g, dim({ kind: 'axis', axis: 'Y' }, { kind: 'pt', leg: leg2, end: 1, at: 'center' }))).toBeCloseTo(
+      195,
+      6,
+    );
+  });
+
   it('dimension points lie on the outer faces for outside dimensions', () => {
     const bar = newBusbar(S40x10, [straight(200), bend(90, 'up', 10), straight(150)]);
     const g = sketchGeometry(bar);
