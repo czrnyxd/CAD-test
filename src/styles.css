@@ -1458,3 +1458,243 @@ kbd {
 .ie-card .ie-input:focus-visible {
   outline: 0;
 }
+
+/* ---------- 2D sketch: axes, driving dimensions, locks, dragging legs ---------- */
+.vb-mode .bb-seg-opt {
+  min-width: 56px;
+  font-weight: 800;
+}
+.sk-canvas {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-1);
+  cursor: grab;
+  user-select: none;
+}
+.sk-canvas.tool-dim,
+.sk-canvas.tool-axis {
+  cursor: crosshair;
+}
+.sk-svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.sk-grid {
+  stroke: var(--line);
+  stroke-width: 0.5;
+  opacity: 0.6;
+}
+.sk-grid2 {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.sk-axis {
+  stroke: #7a4fd6;
+  stroke-width: 1.5;
+  stroke-dasharray: 14 4 3 4;
+}
+.sk-axis.is-base {
+  stroke: var(--ink-2);
+  stroke-width: 1.2;
+}
+.sk-bar {
+  fill: #e8b98f;
+  stroke: #7a4220;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.sk-bar.is-second {
+  fill: #f1d6a6;
+  opacity: 0.8;
+}
+.sk-center {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  stroke-dasharray: 10 3 2 3;
+  pointer-events: none;
+}
+.sk-grab {
+  stroke: transparent;
+  stroke-linecap: round;
+  cursor: move;
+  pointer-events: stroke;
+}
+.sk-grab:hover,
+.sk-grab.is-sel {
+  stroke: rgba(11, 92, 213, 0.18);
+}
+.tool-dim .sk-grab,
+.tool-axis .sk-grab {
+  pointer-events: none;
+}
+.sk-pt {
+  fill: var(--surface-1);
+  stroke: var(--ink);
+  stroke-width: 2;
+  pointer-events: none;
+}
+.sk-pt.is-end {
+  fill: var(--ok);
+  stroke: var(--ok);
+}
+.sk-pt.is-hover,
+.sk-pt.is-first {
+  fill: var(--action);
+  stroke: var(--action);
+}
+.sk-ext {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+}
+.sk-dline {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+.sk-arrowhead {
+  fill: var(--ink);
+}
+.sk-dim.is-locked .sk-dline,
+.sk-dim.is-locked .sk-ext {
+  stroke: var(--action);
+}
+.sk-dim.is-bad .sk-dline,
+.sk-dim.is-bad .sk-ext {
+  stroke: var(--danger);
+}
+.sk-tags {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sk-tag {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  pointer-events: auto;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  border: 2px solid var(--line-strong);
+  box-shadow: 0 1px 3px rgba(18, 23, 29, 0.15);
+  font-feature-settings: 'tnum' 1;
+}
+.sk-tag .sk-val {
+  border: 0;
+  background: none;
+  padding: 2px 6px 2px 8px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 34px;
+}
+.sk-tag .sk-val:hover {
+  color: var(--action);
+  text-decoration: underline;
+}
+.sk-lock,
+.sk-x {
+  border: 0;
+  background: none;
+  width: 32px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.sk-lock:hover,
+.sk-x:hover {
+  background: var(--surface-3);
+}
+.sk-lock.is-on {
+  color: var(--action);
+}
+.sk-tag.is-locked {
+  border-color: var(--action);
+}
+.sk-tag.is-sel {
+  border-color: var(--action);
+  background: var(--action-soft);
+}
+.sk-bend {
+  background: var(--ink);
+  border-color: var(--ink);
+  transform: translate(-50%, -150%);
+}
+.sk-bend .sk-val,
+.sk-bend .sk-lock {
+  color: var(--surface-1);
+}
+.sk-bend .sk-lock:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+.sk-bend.is-locked {
+  background: var(--action);
+  border-color: var(--action);
+}
+.sk-dimtag {
+  border-color: var(--ink-2);
+}
+.sk-dimtag.is-bad {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.sk-dimtag.is-bad .sk-val {
+  color: var(--danger);
+}
+.sk-axtag {
+  border-color: #7a4fd6;
+  transform: translate(-50%, 0);
+}
+.sk-axtag.dir-h {
+  transform: translate(0, -50%);
+}
+.sk-axtag.is-base {
+  border-color: var(--ink-2);
+  padding: 2px 8px;
+  font-weight: 800;
+}
+.sk-axtag .sk-val {
+  color: #5a35b0;
+}
+.sk-a {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: var(--on-ok);
+  font-weight: 800;
+  padding: 2px 8px;
+  transform: translate(-150%, -50%);
+}
+.sk-pop {
+  position: absolute;
+  z-index: 8;
+  transform: translate(12px, 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+}
+.sk-pop-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.sk-hint {
+  color: var(--ink-2);
+}
+.step-locked {
+  color: var(--action);
+}
+.step-lock {
+  flex: none;
+}

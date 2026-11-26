@@ -232,6 +232,8 @@ export interface AppState {
   addCustomSection: (s: Section) => void;
   /** Apply a change to the busbar (recorded in undo history unless record = false). */
   update: (fn: (bar: Busbar) => Busbar, record?: boolean) => void;
+  /** Record in the undo history a change made in several unrecorded steps (dragging), from `from`. */
+  commit: (from: Busbar) => void;
   updateSteps: (fn: (steps: Step[]) => Step[]) => void;
   undo: () => void;
   redo: () => void;
@@ -270,6 +272,10 @@ export const useStore = create<AppState>((set, get) => ({
     const next = { ...fn(prev), updatedAt: new Date().toISOString() };
     if (!record) return set({ bar: next });
     set({ bar: next, past: [...get().past.slice(-HISTORY_LIMIT), prev], future: [] });
+  },
+  commit: (from) => {
+    if (from === get().bar) return;
+    set({ past: [...get().past.slice(-HISTORY_LIMIT), from], future: [] });
   },
   updateSteps: (fn) => get().update((b) => ({ ...b, steps: fn(b.steps) })),
   undo: () => {

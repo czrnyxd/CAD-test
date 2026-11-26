@@ -30,6 +30,8 @@ export interface StraightStep {
   /** Leg length as dimensioned (to virtual sharps, according to dimensionMode). */
   length: number;
   holes?: Hole[];
+  /** Length is locked: driving dimensions and dragging never change it. */
+  locked?: boolean;
 }
 
 export interface BendStep {
@@ -40,6 +42,8 @@ export interface BendStep {
   direction: Direction;
   /** Inner bend radius, mm. */
   radius: number;
+  /** Angle is locked: driving dimensions and dragging never change it. */
+  locked?: boolean;
 }
 
 export type Step = StraightStep | BendStep;
@@ -51,6 +55,37 @@ export interface DoubleConfig {
   side: 'above' | 'below';
   /** Gap between the bars, mm (0 = tight). */
   gap: number;
+}
+
+/**
+ * 2D sketch of the bar (the bending plane): reference axes and dimensions that drive the leg
+ * lengths and bend angles. Coordinates: end A at the origin, x along the first leg, y towards
+ * bend "up"; points are the virtual sharps of the bar's centreline.
+ */
+export interface SketchAxis {
+  id: string;
+  /** 'h' – horizontal line y = at, 'v' – vertical line x = at. */
+  dir: 'h' | 'v';
+  at: number;
+}
+
+/** End of a leg (its centreline virtual sharp) or a reference axis. */
+export type SketchRef = { kind: 'pt'; leg: string; end: 0 | 1 } | { kind: 'axis'; axis: string };
+
+export interface SketchDim {
+  id: string;
+  /** 'h' – horizontal distance, 'v' – vertical distance, 'd' – straight-line distance. */
+  type: 'h' | 'v' | 'd';
+  a: SketchRef;
+  b: SketchRef;
+  /** Value to keep when locked (when not locked the dimension only measures). */
+  value: number;
+  locked: boolean;
+}
+
+export interface Sketch {
+  axes: SketchAxis[];
+  dims: SketchDim[];
 }
 
 /** Axis of the cabinet: x – to the right, y – up, z – towards the front (doors). */
@@ -92,6 +127,7 @@ export interface Busbar {
   steps: Step[];
   double?: DoubleConfig;
   cabinet?: CabinetConfig;
+  sketch?: Sketch;
   updatedAt: string;
 }
 

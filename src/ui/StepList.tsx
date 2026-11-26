@@ -259,6 +259,7 @@ export function StepList({
                 onHead={toggle}
                 summary={
                   <>
+                    {s.locked && <Icon name="lock" size={20} className="step-locked" />}
                     {holes.length > 0 && (
                       <span className="bb-step-extra">{plural(holes.length, ['otwór', 'otwory', 'otworów'])}</span>
                     )}
@@ -276,6 +277,7 @@ export function StepList({
                     className="bb-grow"
                     onClick={() => editMain(i)}
                   />
+                  <LockToggle locked={!!s.locked} what="długość" onClick={() => patch(i, { locked: !s.locked })} />
                   <button className="bb-btn bb-btn--secondary add-hole" onClick={() => addHole(i)}>
                     <Icon name="plus" />
                     Dodaj otwór
@@ -416,22 +418,27 @@ export function StepList({
                       nastawa {fmt(info.machineAngle)}° · {fmt(info.position, 0)} od A
                     </span>
                   )}
+                  {s.locked && <Icon name="lock" size={20} className="step-locked" />}
                   <span className="bb-step-val">{fmt(s.angle)}°</span>
                 </>
               }
               headAction={<DeleteButton className="bb-step-del" onClick={() => remove(i)} />}
             >
-              <Seg
-                label="Kierunek gięcia"
-                block
-                value={s.direction}
-                options={dirs.map((d) => ({
-                  value: d,
-                  label: d === 'up' ? 'W górę' : 'W dół',
-                  icon: <Icon name={d} />,
-                }))}
-                onChange={(v) => patch(i, { direction: v as Direction })}
-              />
+              <div className="bb-row">
+                <Seg
+                  label="Kierunek gięcia"
+                  className="bb-grow"
+                  block
+                  value={s.direction}
+                  options={dirs.map((d) => ({
+                    value: d,
+                    label: d === 'up' ? 'W górę' : 'W dół',
+                    icon: <Icon name={d} />,
+                  }))}
+                  onChange={(v) => patch(i, { direction: v as Direction })}
+                />
+                <LockToggle locked={!!s.locked} what="kąt" onClick={() => patch(i, { locked: !s.locked })} />
+              </div>
               <div className="bb-row4">
                 <Chip
                   label="O ile giąć"
@@ -517,6 +524,25 @@ function StepCard({
       </div>
       {selected && <div className="bb-step-body">{children}</div>}
     </section>
+  );
+}
+
+/** Lock of a length or an angle: driving dimensions and dragging in 2D never change it. */
+function LockToggle({ locked, what, onClick }: { locked: boolean; what: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={`bb-toggle step-lock ${locked ? 'is-on' : ''}`}
+      aria-pressed={locked}
+      title={locked ? `Odblokuj ${what}` : `Zablokuj ${what} – wymiary w 2D i przesuwanie jej nie zmienią`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      <Icon name={locked ? 'lock' : 'unlock'} />
+      {locked ? 'Zablok.' : 'Wolna'}
+    </button>
   );
 }
 

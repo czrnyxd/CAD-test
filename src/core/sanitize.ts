@@ -8,6 +8,10 @@ import {
   type CabinetAxis,
   type CabinetConfig,
   type DoubleConfig,
+  type Sketch,
+  type SketchAxis,
+  type SketchDim,
+  type SketchRef,
   type Hole,
   type MachineSettings,
   type Step,
@@ -60,7 +64,7 @@ export function sanitizeBusbar(raw: unknown, settings: MachineSettings): Sanitiz
 
   // Steps.
   const steps: Step[] = [];
-  const appendStraight = (length: number, holes: Hole[], id: string) => {
+  const appendStraight = (length: number, holes: Hole[], id: string, locked = false) => {
     const prev = steps[steps.length - 1];
     if (prev?.kind === 'straight') {
       const shift = prev.length;
@@ -69,6 +73,7 @@ export function sanitizeBusbar(raw: unknown, settings: MachineSettings): Sanitiz
     } else {
       const st: StraightStep = { id, kind: 'straight', length };
       if (holes.length) st.holes = holes;
+      if (locked) st.locked = true;
       steps.push(st);
     }
   };
@@ -94,7 +99,7 @@ export function sanitizeBusbar(raw: unknown, settings: MachineSettings): Sanitiz
           else changes.push(`Pominięto nieprawidłowy otwór w kroku ${no}.`);
         });
       }
-      appendStraight(length, holes, id);
+      appendStraight(length, holes, id, s.locked === true);
     } else if (s.kind === 'bend') {
       const angle = num(s.angle);
       let radius = num(s.radius);
@@ -115,7 +120,14 @@ export function sanitizeBusbar(raw: unknown, settings: MachineSettings): Sanitiz
         changes.push(`Gięcie (krok ${no}) nie miało kierunku – przyjęto „w górę”.`);
       }
       // An invalid angle is kept as is: the analysis reports it as an error instead of guessing.
-      steps.push({ id, kind: 'bend', angle: Number.isFinite(angle) ? angle : 0, direction, radius });
+      steps.push({
+        id,
+        kind: 'bend',
+        angle: Number.isFinite(angle) ? angle : 0,
+        direction,
+        radius,
+        ...(s.locked === true ? { locked: true } : {}),
+      });
       if (!Number.isFinite(angle)) changes.push(`Gięcie (krok ${no}) nie miało kąta – ustaw go.`);
     } else if (s.kind === 'twist') {
       const length = Math.max(0, num(s.length) || 0);
@@ -155,7 +167,37 @@ export function sanitizeBusbar(raw: unknown, settings: MachineSettings): Sanitiz
   };
   if (double) bar.double = double;
   if (isObj(raw.cabinet)) bar.cabinet = sanitizeCabinet(raw.cabinet);
+  if (isObj(raw.sketch)) bar.sketch = sanitizeSketch(raw.sketch);
   return { bar, changes };
+}
+
+/** 2D sketch: keep well-formed axes and dimensions (those pointing at missing legs are hidden later). */
+function sanitizeSketch(sk: Obj): Sketch {
+  const axes: SketchAxis[] = [];
+  if (Array.isArray(sk.axes))
+    for (const a of sk.axes) {
+      if (!isObj(a) || typeof a.id !== 'string' || !a.id || (a.dir !== 'h' && a.dir !== 'v')) continue;
+      const at = num(a.at);
+      if (Number.isFinite(at) && Math.abs(at) < 1e6) axes.push({ id: a.id, dir: a.dir, at });
+    }
+  const ref = (r: unknown): SketchRef | null => {
+    if (!isObj(r)) return null;
+    if (r.kind === 'axis' && typeof r.axis === 'string') return { kind: 'axis', axis: r.axis };
+    if (r.kind === 'pt' && typeof r.leg === 'string' && (r.end === 0 || r.end === 1))
+      return { kind: 'pt', leg: r.leg, end: r.end };
+    return null;
+  };
+  const dims: SketchDim[] = [];
+  if (Array.isArray(sk.dims))
+    for (const d of sk.dims) {
+      if (!isObj(d) || typeof d.id !== 'string' || !d.id || (d.type !== 'h' && d.type !== 'v' && d.type !== 'd')) continue;
+      const a = ref(d.a);
+      const b = ref(d.b);
+      const value = num(d.value);
+      if (!a || !b || !(value >= 0)) continue;
+      dims.push({ id: d.id, type: d.type, a, b, value, locked: d.locked === true });
+    }
+  return { axes, dims };
 }
 
 /** Reference cabinet: keep sensible values, fall back to the defaults otherwise (it never blocks a project). */

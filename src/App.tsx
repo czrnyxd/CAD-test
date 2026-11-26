@@ -13,6 +13,7 @@ import {
   type DimensionMode,
   type MachineSettings,
   type Section,
+  type Step,
 } from './core/model';
 import { TEMPLATES } from './core/templates';
 import { sanitizeBusbar } from './core/sanitize';
@@ -28,6 +29,8 @@ import { BendTable, FlatPatternSvg, HoleTable } from './ui/FlatPattern';
 import { NumPad, type NumPadRequest } from './ui/NumPad';
 import { renderSnapshot } from './ui/scene';
 import { StepList } from './ui/StepList';
+import { ProfileEditor } from './ui/ProfileEditor';
+import { keepLockedDims } from './core/sketch';
 import { InlineEditor } from './ui/InlineEditor';
 import { KeysDialog } from './ui/KeysDialog';
 import { keyboardBusy } from './ui/keys';
@@ -141,7 +144,7 @@ export default function App() {
     saveOk,
     notice,
     update,
-    updateSteps,
+    commit,
     undo,
     redo,
     select,
@@ -152,6 +155,7 @@ export default function App() {
     addCustomSection,
   } = useStore();
   const layout = useLayout();
+  const [view2d, setView2d] = useState(false);
   const [desktop, inputPref, setInputPref] = useInputMode();
   // The value that was clicked last – the typed-in editor opens right over it.
   const lastPress = useRef<{ el: HTMLElement | null; at: number }>({ el: null, at: 0 });
@@ -188,6 +192,19 @@ export default function App() {
   useEffect(() => setNp(null), [tab]);
   const [snapshot, setSnapshot] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; undo?: boolean } | null>(null);
+  /** Change steps; locked 2D dimensions are kept by changing the other free steps. */
+  const updateSteps = useCallback(
+    (fn: (steps: Step[]) => Step[]) => {
+      const b = useStore.getState().bar;
+      const steps = fn(b.steps);
+      const before = new Map(b.steps.map((st) => [st.id, st]));
+      const changed = new Set(steps.filter((st) => before.get(st.id) !== st).map((st) => st.id));
+      const res = keepLockedDims({ ...b, steps }, changed);
+      update(() => res.bar);
+      if (!res.ok && res.message) setToast({ text: res.message });
+    },
+    [update],
+  );
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), toast.undo ? 7000 : 4000);
@@ -313,6 +330,18 @@ export default function App() {
       </span>
     </label>
   );
+  const modeSwitch = (
+    <Seg
+      label="Rodzaj widoku"
+      className="vb-mode"
+      value={view2d ? '2d' : '3d'}
+      options={[
+        { value: '3d', label: '3D' },
+        { value: '2d', label: '2D' },
+      ]}
+      onChange={(m) => setView2d(m === '2d')}
+    />
+  );
   const tabs = (
     <Seg
       label="Widok"
@@ -415,22 +444,38 @@ export default function App() {
 
       {tab === 'model' && (
         <div className={`bb-main ${layout === 'tablet' ? '' : 'bb-main--stack'}`}>
-          <Viewer3D
-            bar={bar}
-            assembly={assembly}
-            selected={selected}
-            errorSteps={errorSteps}
-            issues={issues}
-            onSelect={onSelect}
-            cabinet={cabinetView}
-            foot={
-              double && assembly.arcGaps.length > 0 ? (
-                <span className="vf-gap">
-                  Szczelina w łukach <b>do {fmt(Math.max(...assembly.arcGaps.map((g) => g.gap)))} mm</b>
-                </span>
-              ) : undefined
-            }
-          />
+          {view2d ? (
+            <ProfileEditor
+              bar={bar}
+              assembly={assembly}
+              selected={selected}
+              onSelect={onSelect}
+              update={update}
+              updateSteps={updateSteps}
+              commit={commit}
+              numpad={openNumpad}
+              onMessage={(text) => setToast({ text })}
+              modeSwitch={modeSwitch}
+            />
+          ) : (
+            <Viewer3D
+              modeSwitch={modeSwitch}
+              bar={bar}
+              assembly={assembly}
+              selected={selected}
+              errorSteps={errorSteps}
+              issues={issues}
+              onSelect={onSelect}
+              cabinet={cabinetView}
+              foot={
+                double && assembly.arcGaps.length > 0 ? (
+                  <span className="vf-gap">
+                    Szczelina w łukach <b>do {fmt(Math.max(...assembly.arcGaps.map((g) => g.gap)))} mm</b>
+                  </span>
+                ) : undefined
+              }
+            />
+          )}
           {panel === 'cabinet' ? (
             <CabinetPanel
               cfg={cabCfg}

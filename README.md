@@ -71,6 +71,20 @@ Delete usuń, 1–4 widoki, F dopasuj, W wymiary, M pomiar, Ctrl+Z/Y, Ctrl+P, F1
 Przy pomiarze punkt pod kursorem podświetla się z nazwą przed kliknięciem. Karty gięć pokazują
 nastawę i pozycję od A. Cały ekran można powiększyć przez Ctrl + plus.
 
+## Widok 2D: osie, wymiary sterujące, blokady
+
+Przełącznik **3D / 2D** nad modelem. W 2D szyna jest narysowana w płaszczyźnie gięcia (A w
+początku układu, osie X i Y przez A):
+- **Oś** – dodaje pionową lub poziomą oś przez kliknięte miejsce albo punkt szyny; położenie
+  zmienia się kliknięciem w jej opis.
+- **Wymiar** – kliknij dwa punkty (kropki = ostre narożniki osi szyny) albo punkt i oś, wybierz
+  poziomy / pionowy / po prostej i wpisz wartość. Szyna sama zmienia odblokowane długości (a gdy
+  to nie wystarcza – kąty), a wymiar zostaje na rysunku zablokowany.
+- **Kłódki** przy długościach, kątach (także w liście kroków) i wymiarach – zablokowane wartości
+  się nie zmieniają; zablokowane wymiary są pilnowane także przy zmianie długości w liście.
+- **Przeciąganie odcinka** przesuwa go w poprzek, zmieniając sąsiednie odcinki.
+Konflikt (zablokowany wymiar nie do utrzymania) jest pokazany na czerwono.
+
 ## Szafa (odniesienie)
 
 Przycisk **Szafa** nad listą kroków: rama szafy z polami, położenie końca A, kierunek szyny,

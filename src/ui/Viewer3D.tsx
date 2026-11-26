@@ -32,6 +32,8 @@ interface Props {
   foot?: ReactNode;
   /** Reference cabinet to show around the bar (null = bar alone). */
   cabinet?: { cfg: CabinetConfig; check: CabinetCheck } | null;
+  /** 3D / 2D switch shown first in the bar above the model. */
+  modeSwitch?: ReactNode;
 }
 
 interface Ctx {
@@ -233,7 +235,7 @@ const VIEWS: [ViewName, string][] = [
   ['side', 'Bok'],
 ];
 
-export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect, foot, cabinet }: Props) {
+export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect, foot, cabinet, modeSwitch }: Props) {
   const part1 = assembly.parts[0];
   const { path, analysis } = part1;
   /** Cabinet → bar coordinates, and the rotation part of bar → cabinet (for the view directions). */
@@ -897,6 +899,7 @@ export function Viewer3D({ bar, assembly, selected, errorSteps, issues, onSelect
   return (
     <div className={`bb-viewport viewer ${measure ? 'measuring' : ''}`}>
       <div className="bb-viewbar">
+        {modeSwitch}
         <div className="bb-seg" role="radiogroup" aria-label="Widok modelu">
           {VIEWS.map(([v, l], k) => (
             <button

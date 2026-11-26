@@ -13,6 +13,9 @@ import {
   sectionList,
   straight,
   type CabinetConfig,
+  type SketchAxis,
+  type SketchDim,
+  type SketchRef,
   type MachineSettings,
   type Section,
   type StraightStep,
@@ -20,6 +23,7 @@ import {
 import { sanitizeBusbar } from './sanitize';
 import { planSync } from './syncPlan';
 import { freeHolePosition, removeStep } from './edit';
+import { dimConflicts, dragLeg, keepLockedDims, measureDim, setDimValue, sketchGeometry } from './sketch';
 import { barToCabinet, cabinetConfig, checkCabinet, phaseAxis, widthAxis } from './cabinet';
 
 const S40x10: Section = { width: 40, thickness: 10, material: 'Cu' };
@@ -649,5 +653,121 @@ describe('reference cabinet', () => {
     expect(c.phases).toBe(4);
     expect(c.a.x).toBe(120.5);
     expect(c.upSide[1]).not.toBe('y');
+  });
+});
+
+describe('2D sketch and driving dimensions', () => {
+  const Z = () => newBusbar(S40x10, [straight(300), bend(90, 'up', 10), straight(100), bend(90, 'down', 10), straight(300)]);
+  const withDims = (bar: ReturnType<typeof newBusbar>, dims: SketchDim[], axes: SketchAxis[] = []) => ({
+    ...bar,
+    sketch: { axes, dims },
+  });
+  const pt = (bar: ReturnType<typeof newBusbar>, legNo: number, end: 0 | 1): SketchRef => ({
+    kind: 'pt',
+    leg: bar.steps.filter((s) => s.kind === 'straight')[legNo].id,
+    end,
+  });
+
+  it('centreline sharps match the 3D path', () => {
+    const bar = newBusbar(S40x10, [straight(200), bend(90, 'up', 10), straight(150)]);
+    const g = sketchGeometry(bar);
+    // Outside dimensions: the centreline sharp is T/2·tan(45°) = 5 mm inside the outside one.
+    expect(g.vertices[1].x).toBeCloseTo(195, 6);
+    expect(g.vertices[2].y).toBeCloseTo(145, 6);
+    const path = buildPath(bar, analyze(bar, settings));
+    const end = path.samples[path.samples.length - 1].p;
+    expect(end.x).toBeCloseTo(g.vertices[2].x, 4);
+    expect(end.y).toBeCloseTo(g.vertices[2].y, 4);
+  });
+
+  it('a driving dimension changes the free legs, locked ones stay', () => {
+    const bar = Z();
+    const d: SketchDim = { id: 'd1', type: 'h', a: pt(bar, 0, 0), b: pt(bar, 2, 1), value: 0, locked: false };
+    const g = sketchGeometry(bar);
+    const now = measureDim(bar, g, d);
+    const res = setDimValue(withDims(bar, [d]), 'd1', now + 100);
+    expect(res.ok).toBe(true);
+    const L = res.bar.steps.filter((s) => s.kind === 'straight').map((s) => (s as StraightStep).length);
+    expect(L[0] + L[2]).toBeCloseTo(700, 6);
+    expect(L[1]).toBe(100); // perpendicular leg does not help, so it stays
+    expect(Math.abs(measureDim(res.bar, sketchGeometry(res.bar), d))).toBeCloseTo(now + 100, 2);
+
+    // With leg 1 locked only leg 3 changes.
+    const locked = { ...bar, steps: bar.steps.map((s, i) => (i === 0 ? { ...s, locked: true } : s)) };
+    const res2 = setDimValue(withDims(locked, [d]), 'd1', now + 100);
+    const L2 = res2.bar.steps.filter((s) => s.kind === 'straight').map((s) => (s as StraightStep).length);
+    expect(L2).toEqual([300, 100, 400]);
+  });
+
+  it('uses the angles when the lengths are locked, and refuses when nothing is free', () => {
+    const bar = newBusbar(S40x10, [straight(300), bend(90, 'up', 10), straight(200)]);
+    const allLocked = { ...bar, steps: bar.steps.map((s) => (s.kind === 'straight' ? { ...s, locked: true } : s)) };
+    // End B is now right above the bend; asking it to be 100 mm further opens the bend.
+    const d: SketchDim = { id: 'd', type: 'h', a: { kind: 'axis', axis: 'Y' }, b: pt(bar, 1, 1), value: 0, locked: false };
+    const res = setDimValue(withDims(allLocked, [d]), 'd', 395);
+    expect(res.ok).toBe(true);
+    const ang = (res.bar.steps[1] as { angle: number }).angle;
+    expect(ang).toBeLessThan(90);
+    expect(Math.abs(measureDim(res.bar, sketchGeometry(res.bar), d))).toBeCloseTo(395, 2);
+    const frozen = { ...allLocked, steps: allLocked.steps.map((s) => ({ ...s, locked: true })) };
+    expect(setDimValue(withDims(frozen, [d]), 'd', 100).ok).toBe(false);
+  });
+
+  it('measures from an added axis', () => {
+    const bar = Z();
+    const axis: SketchAxis = { id: 'a1', dir: 'v', at: 500 };
+    const d: SketchDim = { id: 'd', type: 'h', a: { kind: 'axis', axis: 'a1' }, b: pt(bar, 1, 0), value: 0, locked: false };
+    const b2 = withDims(bar, [d], [axis]);
+    const x = sketchGeometry(b2).vertices[2].x;
+    expect(measureDim(b2, sketchGeometry(b2), d)).toBeCloseTo(x - 500, 6);
+    const res = setDimValue(b2, 'd', 150);
+    expect(res.ok).toBe(true);
+    expect(sketchGeometry(res.bar).vertices[2].x).toBeCloseTo(350, 4); // left of the axis, as before
+  });
+
+  it('keeps locked dimensions when a leg is edited, and reports a conflict', () => {
+    const bar = Z();
+    const d: SketchDim = { id: 'd', type: 'h', a: pt(bar, 0, 0), b: pt(bar, 2, 1), value: 0, locked: true };
+    d.value = measureDim(bar, sketchGeometry(bar), d);
+    const edited = withDims({ ...bar, steps: bar.steps.map((s, i) => (i === 0 ? { ...s, length: 350 } : s)) }, [d]);
+    const res = keepLockedDims(edited, new Set([edited.steps[0].id]));
+    expect(res.ok).toBe(true);
+    expect((res.bar.steps[4] as StraightStep).length).toBe(250);
+    expect(dimConflicts(res.bar).size).toBe(0);
+    const stuck = { ...edited, steps: edited.steps.map((s, i) => (i === 4 ? { ...s, locked: true } : s)) };
+    const res2 = keepLockedDims(stuck, new Set([edited.steps[0].id]));
+    expect(res2.ok).toBe(false);
+    expect(dimConflicts(stuck).has('d')).toBe(true);
+  });
+
+  it('dragging a leg moves it across, changing the neighbouring legs', () => {
+    const bar = Z();
+    // Middle leg goes up; its normal points to −x, so a shift of −50 moves it 50 mm to the right.
+    const res = dragLeg(bar, 2, 50, -50);
+    expect(res.ok).toBe(true);
+    const L = res.bar.steps.filter((s) => s.kind === 'straight').map((s) => (s as StraightStep).length);
+    expect(L).toEqual([350, 100, 300]);
+  });
+
+  it('reads a stored sketch and drops broken entries', () => {
+    const bar = Z();
+    const raw = {
+      ...bar,
+      steps: bar.steps.map((s, i) => (i === 0 ? { ...s, locked: true } : s)),
+      sketch: {
+        axes: [
+          { id: 'a', dir: 'v', at: '120,5' },
+          { id: 'b', dir: 'q', at: 1 },
+        ],
+        dims: [
+          { id: 'x', type: 'h', a: { kind: 'axis', axis: 'a' }, b: pt(bar, 0, 1), value: 10, locked: true },
+          { id: 'y', type: 'z', a: {}, b: {}, value: 1 },
+        ],
+      },
+    };
+    const res = sanitizeBusbar(raw, settings).bar!;
+    expect(res.steps[0].locked).toBe(true);
+    expect(res.sketch!.axes).toEqual([{ id: 'a', dir: 'v', at: 120.5 }]);
+    expect(res.sketch!.dims.map((d) => d.id)).toEqual(['x']);
   });
 });
