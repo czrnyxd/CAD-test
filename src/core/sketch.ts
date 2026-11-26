@@ -52,6 +52,11 @@ export interface SketchGeometry {
   bends: { stepIndex: number; vertex: number }[];
   /** Reference lines along the legs (outer faces for outside dimensions), through the dimension points. */
   lines: [Vec2, Vec2][];
+  /**
+   * Where the centreline of end A is. The drawing is moved so that the dimension point of end A
+   * is the origin: for outside dimensions the outer face of the first leg lies on the X axis.
+   */
+  origin: Vec2;
 }
 
 /**
@@ -114,7 +119,17 @@ export function sketchGeometry(bar: Busbar, steps: Step[] = bar.steps): SketchGe
       lines.push([add(center[l.from], n, sg ? e : 0), add(center[l.to], n, sg ? e : 0)]);
     }
   });
-  return { vertices, center, legs, bends, lines };
+  // Origin at the dimension point of end A (on the reference face of the first leg).
+  const o = { ...vertices[0] };
+  const shift = (p: Vec2) => ({ x: p.x - o.x, y: p.y - o.y });
+  return {
+    vertices: vertices.map(shift),
+    center: center.map(shift),
+    legs,
+    bends,
+    lines: lines.map(([p, q]) => [shift(p), shift(q)] as [Vec2, Vec2]),
+    origin: { x: -o.x, y: -o.y },
+  };
 }
 
 /** Vertex a point reference stands for, or null when its leg no longer exists. */
@@ -258,7 +273,7 @@ function solve(
   if (!params.length) return { steps, ok: worst(r) < 0.01, error: worst(r) };
   const scale = params.map((p) => (p.kind === 'ang' ? 1 / ANGLE_COST : 1) / (cost.get(steps[p.step].id) ?? 1));
   const sw = targets.map((t) => Math.sqrt(t.weight));
-  for (let it = 0; it < 40 && worst(r) > 1e-4; it++) {
+  for (let it = 0; it < 60 && worst(r) > 1e-4; it++) {
     // Jacobian (central differences), weighted rows, scaled columns.
     const J = targets.map(() => params.map(() => 0));
     params.forEach((p, j) => {
@@ -272,32 +287,39 @@ function solve(
       targets.forEach((_, i) => (J[i][j] = ((fp[i] - fm[i]) / (2 * h)) * sw[i] * scale[j]));
     });
     const rw = r.map((v, i) => v * sw[i]);
-    // Minimum-norm step: Δy = Jᵀ (J Jᵀ + λI)⁻¹ r
+    // Minimum-norm step: Δy = Jᵀ (J Jᵀ + λI)⁻¹ r. λ relative to the largest diagonal entry, raised
+    // only when the step does not help (Levenberg–Marquardt), so an angle-only move is not slowed down.
     const m = targets.length;
-    const JJt = Array.from({ length: m }, (_, a) =>
-      Array.from({ length: m }, (_, b) => J[a].reduce((s, v, k) => s + v * J[b][k], 0) + (a === b ? damping : 0)),
+    const base = Array.from({ length: m }, (_, a) =>
+      Array.from({ length: m }, (_, b) => J[a].reduce((s, v, k) => s + v * J[b][k], 0)),
     );
-    const z = solveLinear(JJt, rw);
-    if (!z) break;
-    const dx = params.map((_, j) => scale[j] * J.reduce((s, row, i) => s + row[j] * z[i], 0));
-    // Keep inside the bounds; halve the step while it does not help (strongly bent shapes).
-    let t = 1;
+    const diag = Math.max(1e-30, ...base.map((row, i) => row[i]));
+    const norm = (q: number[]) => q.reduce((s, v, i) => s + v * v * targets[i].weight, 0);
     let next = x;
     let rn = r;
-    for (let k = 0; k < 8; k++, t /= 2) {
-      const cand = x.map((v, j) => {
-        let nv = v + t * dx[j];
-        nv = Math.max(lowerBound(bar, withValues(steps, params, x), params[j]), nv);
-        if (params[j].kind === 'ang') nv = Math.min(179.5, nv);
-        return nv;
-      });
-      const rc = residual(cand);
-      const norm = (q: number[]) => q.reduce((s, v, i) => s + v * v * targets[i].weight, 0);
-      if (norm(rc) < norm(r)) {
-        next = cand;
-        rn = rc;
-        break;
+    for (const lam of [damping, 1e-6, 1e-3, 1e-1, 10]) {
+      const z = solveLinear(
+        base.map((row, a) => row.map((v, b) => v + (a === b ? lam * diag : 0))),
+        rw,
+      );
+      if (!z) continue;
+      const dx = params.map((_, j) => scale[j] * J.reduce((s, row, i) => s + row[j] * z[i], 0));
+      // Keep inside the bounds; shorten the step while it does not help (strongly bent shapes).
+      for (let k = 0, t = 1; k < 6; k++, t /= 2) {
+        const cand = x.map((v, j) => {
+          let nv = v + t * dx[j];
+          nv = Math.max(lowerBound(bar, withValues(steps, params, x), params[j]), nv);
+          if (params[j].kind === 'ang') nv = Math.min(179.5, nv);
+          return nv;
+        });
+        const rc = residual(cand);
+        if (norm(rc) < norm(r)) {
+          next = cand;
+          rn = rc;
+          break;
+        }
       }
+      if (next !== x) break;
     }
     if (next === x) break;
     x = next;
@@ -315,13 +337,13 @@ function dimTarget(bar: Busbar, g0: SketchGeometry, d: SketchDim, value = d.valu
 
 const round = (v: number, step: number) => Math.round(v / step) * step;
 
-/** Rounded values (whole mm, 0.5°) when they still keep the locked dimensions. */
+/** Rounded values (whole mm, 0.1°) when they still keep the locked dimensions. */
 function tidy(bar: Busbar, before: Step[], res: SolveResult, keep: Target[]): Step[] {
   const val = (s: Step) => (s.kind === 'straight' ? s.length : s.angle);
   const changed = res.steps.map((s, i) => Math.abs(val(s) - val(before[i])) > 1e-6);
   const roundStep = (s: Step, i: number): Step => {
     if (!changed[i]) return before[i];
-    const v = s.kind === 'straight' ? round(s.length, 1) : round(s.angle, 0.5);
+    const v = s.kind === 'straight' ? round(s.length, 1) : round(s.angle, 0.1);
     if (v === val(before[i])) return before[i];
     return (s.kind === 'straight' ? { ...s, length: v } : { ...s, angle: v }) as Step;
   };
@@ -422,7 +444,7 @@ export function dragLeg(bar: Busbar, stepIndex: number, along: number, to: Vec2)
     { f: (g) => pointOn(g).y, value: to.y, weight: 1 },
   ];
   // The dragged leg itself changes its length only when nothing else can move the point (e.g. along itself).
-  const res = solve(bar, [...locked, ...follow], new Set(), 1e-3, new Map([[leg.id, 4]]));
+  const res = solve(bar, [...locked, ...follow], new Set(), 1e-9, new Map([[leg.id, 4]]));
   const g1 = sketchGeometry(bar, res.steps);
   if (locked.some((t) => Math.abs(t.f(g1) - t.value) > 0.05)) return { bar, ok: false };
   const steps = tidy(bar, bar.steps, res, locked);

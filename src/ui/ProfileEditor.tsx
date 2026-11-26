@@ -83,11 +83,15 @@ export function ProfileEditor({
       assembly.parts.map((part) => {
         const s = part.path.samples;
         const off = part.offset;
+        // Moved like the sketch: the dimension point of end A is the origin.
         const side = (k: number) =>
-          s.map((q) => ({ x: q.p.x + q.n.x * (off + (k * T) / 2), y: q.p.y + q.n.y * (off + (k * T) / 2) }));
+          s.map((q) => ({
+            x: q.p.x + q.n.x * (off + (k * T) / 2) + g.origin.x,
+            y: q.p.y + q.n.y * (off + (k * T) / 2) + g.origin.y,
+          }));
         return { index: part.index, pts: [...side(1), ...side(-1).reverse()] };
       }),
-    [assembly, T],
+    [assembly, T, g],
   );
 
   const bounds = useMemo(() => {
@@ -133,10 +137,16 @@ export function ProfileEditor({
     fit();
   });
 
+  const afterDrag = useRef(false);
   const v = view ?? { s: 1, cx: 0, cy: 0 };
   // After a change (not while dragging) bring the whole bar back into view when part of it left it.
   useEffect(() => {
     if (!view || gesture.current) return;
+    // Not right after a drag: the view stays where the user was working.
+    if (afterDrag.current) {
+      afterDrag.current = false;
+      return;
+    }
     const lo = { x: view.cx - size.w / 2 / view.s, y: view.cy - size.h / 2 / view.s };
     const hi = { x: view.cx + size.w / 2 / view.s, y: view.cy + size.h / 2 / view.s };
     if (bounds.x0 < lo.x || bounds.x1 > hi.x || bounds.y0 < lo.y || bounds.y1 > hi.y) fit();
@@ -388,6 +398,7 @@ export function ProfileEditor({
           gs.done = true;
           update(() => res.bar, false);
         }
+        afterDrag.current = true;
         commit(gs.start);
         if (!gs.done) onMessage('Ten odcinek nie może się przesunąć – sąsiednie długości i kąty są zablokowane.');
       } else onSelect(gs.step === selected ? null : gs.step);

@@ -673,11 +673,11 @@ describe('2D sketch and driving dimensions', () => {
     const g = sketchGeometry(bar);
     // Outside dimensions: the centreline sharp is T/2·tan(45°) = 5 mm inside the outside one.
     expect(g.center[1].x).toBeCloseTo(195, 6);
-    expect(g.center[2].y).toBeCloseTo(145, 6);
+    expect(g.center[2].y - g.center[1].y).toBeCloseTo(145, 6);
     const path = buildPath(bar, analyze(bar, settings));
     const end = path.samples[path.samples.length - 1].p;
-    expect(end.x).toBeCloseTo(g.center[2].x, 4);
-    expect(end.y).toBeCloseTo(g.center[2].y, 4);
+    expect(end.x + g.origin.x).toBeCloseTo(g.center[2].x, 4);
+    expect(end.y + g.origin.y).toBeCloseTo(g.center[2].y, 4);
   });
 
   it('a driving dimension changes the free legs, locked ones stay', () => {
@@ -766,14 +766,30 @@ describe('2D sketch and driving dimensions', () => {
     expect((res.bar.steps[2] as StraightStep).length).toBe(200);
   });
 
+  it('the grabbed point lands under the cursor, also when only the angle can move it', () => {
+    const bar = newBusbar(S40x10, [straight(300), bend(90, 'up', 10), straight(200)]);
+    const locked = { ...bar, steps: bar.steps.map((s) => (s.kind === 'straight' ? { ...s, locked: true } : s)) };
+    const g = sketchGeometry(locked);
+    const r = Math.hypot(g.center[2].x - g.center[1].x, g.center[2].y - g.center[1].y);
+    // Where the end is with the bend at 60° (a place it can reach).
+    const at60 = { ...locked, steps: locked.steps.map((s, i) => (i === 1 ? { ...s, angle: 60 } : s)) };
+    const to = sketchGeometry(at60).center[2];
+    const res = dragLeg(locked, 2, r, to);
+    const g2 = sketchGeometry(res.bar);
+    const p = g2.center[2];
+    expect(Math.hypot(p.x - to.x, p.y - to.y)).toBeLessThan(0.5);
+  });
+
   it('dimension points lie on the outer faces for outside dimensions', () => {
     const bar = newBusbar(S40x10, [straight(200), bend(90, 'up', 10), straight(150)]);
     const g = sketchGeometry(bar);
-    // Outer sharp at (200, −5): leg 1 measured 200 to it, leg 2 measured 150 from it.
+    // The outer face of leg 1 lies on the X axis: A at (0, 0), outer sharp at (200, 0), end B at (200, 150).
+    expect(g.vertices[0]).toEqual({ x: 0, y: 0 });
     expect(g.vertices[1].x).toBeCloseTo(200, 6);
-    expect(g.vertices[1].y).toBeCloseTo(-5, 6);
-    expect(g.vertices[0].y).toBeCloseTo(-5, 6);
-    expect(g.vertices[2].y - g.vertices[1].y).toBeCloseTo(150, 6);
+    expect(g.vertices[1].y).toBeCloseTo(0, 6);
+    expect(g.vertices[2].y).toBeCloseTo(150, 6);
+    expect(g.center[0].y).toBeCloseTo(5, 6);
+    expect(g.origin.y).toBeCloseTo(5, 6);
   });
 
   it('reads a stored sketch and drops broken entries', () => {

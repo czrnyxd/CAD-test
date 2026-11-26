@@ -74,7 +74,8 @@ nastawę i pozycję od A. Cały ekran można powiększyć przez Ctrl + plus.
 ## Widok 2D: osie, wymiary sterujące, blokady
 
 Przełącznik **3D / 2D** nad modelem. W 2D szyna jest narysowana w płaszczyźnie gięcia (A w
-początku układu, osie X i Y przez A):
+początku układu, osie X i Y przez A; przy wymiarach po zewnętrznej zewnętrzna krawędź
+pierwszego odcinka leży na osi X):
 - **Oś** – dodaje pionową lub poziomą oś przez kliknięte miejsce albo punkt szyny; położenie
   zmienia się kliknięciem w jej opis.
 - **Wymiar** – kliknij dwa punkty (kropki = ostre narożniki osi szyny) albo punkt i oś, wybierz
