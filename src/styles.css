@@ -1518,8 +1518,16 @@ kbd {
 .sk-grab {
   stroke: transparent;
   stroke-linecap: round;
-  cursor: move;
+  cursor: pointer;
   pointer-events: stroke;
+}
+.sk-canvas.over-end,
+.sk-canvas.over-end .sk-grab {
+  cursor: move;
+}
+.sk-pt.is-end {
+  stroke: var(--surface-1);
+  stroke-width: 2.5;
 }
 .sk-grab:hover,
 .sk-grab.is-sel {

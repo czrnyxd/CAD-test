@@ -452,6 +452,29 @@ export function dragLeg(bar: Busbar, stepIndex: number, along: number, to: Vec2)
   return { bar: { ...bar, steps }, ok: moved };
 }
 
+/**
+ * Drag a dimension point (end A, a corner or end B in the sketch's frame, A at the origin) to `to`,
+ * keeping the locked dimensions, lengths and angles. Steps change as little as possible: lengths
+ * first, angles only where lengths cannot do it (or are locked). Best effort out of reach.
+ */
+export function dragPoint(bar: Busbar, vertex: number, to: Vec2): SketchChange {
+  const g0 = sketchGeometry(bar);
+  if (!g0.vertices[vertex]) return { bar, ok: false };
+  const locked = liveDims(bar, g0)
+    .filter((d) => d.locked)
+    .map((d) => dimTarget(bar, g0, d, d.value, 1000));
+  const follow: Target[] = [
+    { f: (g) => g.vertices[vertex].x, value: to.x, weight: 1 },
+    { f: (g) => g.vertices[vertex].y, value: to.y, weight: 1 },
+  ];
+  const res = solve(bar, [...locked, ...follow], new Set(), 1e-9);
+  const g1 = sketchGeometry(bar, res.steps);
+  if (locked.some((t) => Math.abs(t.f(g1) - t.value) > 0.05)) return { bar, ok: false };
+  const steps = tidy(bar, bar.steps, res, locked);
+  const moved = steps.some((s, i) => s !== bar.steps[i]);
+  return { bar: { ...bar, steps }, ok: moved };
+}
+
 /** Is every locked dimension at its value? Returns the ids of those that are not. */
 export function dimConflicts(bar: Busbar, g = sketchGeometry(bar)): Set<string> {
   const out = new Set<string>();

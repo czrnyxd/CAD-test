@@ -6,7 +6,7 @@ import {
   allAxes,
   axisName,
   dimConflicts,
-  dragLeg,
+  dragPoint,
   liveDims,
   measureDim,
   refVertex,
@@ -293,8 +293,21 @@ export function ProfileEditor({
 
   // ------------------------------------------------------------ pointer: drag legs, pan, zoom, pick
   const gesture = useRef<
-    | { kind: 'pan'; x: number; y: number; cx: number; cy: number; moved: boolean }
-    | { kind: 'leg'; step: number; start: Busbar; along: number; p0: Vec2; x: number; y: number; moved: boolean; done: boolean }
+    | { kind: 'pan'; x: number; y: number; cx: number; cy: number; moved: boolean; leg?: number }
+    | {
+        kind: 'end';
+        /** 'A': end A follows the cursor (the bar keeps end B in place), 'B': end B follows the cursor. */
+        which: 'A' | 'B';
+        start: Busbar;
+        /** Position of the grabbed end and of end B at the start, and the view then. */
+        p0: Vec2;
+        b0: Vec2;
+        v0: { s: number; cx: number; cy: number };
+        x: number;
+        y: number;
+        moved: boolean;
+        done: boolean;
+      }
     | null
   >(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -327,21 +340,28 @@ export function ProfileEditor({
       setPop({ x, y, kind: 'axisDir', at: snapped });
       return;
     }
-    const legEl = (e.target as Element).closest('[data-leg]');
-    if (legEl && e.button === 0) {
-      const step = Number(legEl.getAttribute('data-leg'));
-      const leg = g.legs.find((l) => l.stepIndex === step)!;
-      const a = g.center[leg.from];
-      const b = g.center[leg.to];
-      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-      const w = toW(x, y);
-      const along = Math.max(0, Math.min(len, ((w.x - a.x) * (b.x - a.x) + (w.y - a.y) * (b.y - a.y)) / len));
-      // The grabbed point of the leg (on its centreline) – it follows the cursor.
-      const p0 = { x: a.x + ((b.x - a.x) * along) / len, y: a.y + ((b.y - a.y) * along) / len };
-      gesture.current = { kind: 'leg', step, start: bar, along, p0, x, y, moved: false, done: false };
+    // An end of the bar: grab it and move it.
+    const end = e.button === 0 ? endAt(x, y) : null;
+    if (end) {
+      const last = g.vertices.length - 1;
+      gesture.current = {
+        kind: 'end',
+        which: end,
+        start: bar,
+        p0: g.vertices[end === 'A' ? 0 : last],
+        b0: g.vertices[last],
+        v0: v,
+        x,
+        y,
+        moved: false,
+        done: false,
+      };
       return;
     }
-    gesture.current = { kind: 'pan', x, y, cx: v.cx, cy: v.cy, moved: false };
+    // A leg: a click selects it; dragging (from anywhere) moves the view.
+    const legEl = (e.target as Element).closest('[data-leg]');
+    const leg = legEl ? Number(legEl.getAttribute('data-leg')) : undefined;
+    gesture.current = { kind: 'pan', x, y, cx: v.cx, cy: v.cy, moved: false, leg };
   };
 
   const onMove = (e: React.PointerEvent) => {
@@ -356,6 +376,10 @@ export function ProfileEditor({
     const gs = gesture.current;
     if (!gs) {
       if (tool === 'dim') setHover(nearestVertex(x, y)?.i ?? null);
+      else {
+        const end = endAt(x, y);
+        setHover(end === 'A' ? 0 : end === 'B' ? g.vertices.length - 1 : null);
+      }
       return;
     }
     if (Math.hypot(x - gs.x, y - gs.y) > 4) gs.moved = true;
@@ -364,23 +388,43 @@ export function ProfileEditor({
       setView({ s: v.s, cx: gs.cx - (x - gs.x) / v.s, cy: gs.cy + (y - gs.y) / v.s });
       return;
     }
-    const to = dragTarget(gs, x, y);
     cancelAnimationFrame(frame.current);
-    frame.current = requestAnimationFrame(() => {
-      const res = dragLeg(gs.start, gs.step, gs.along, to);
-      // Out of reach of the locks: the bar stays where it last could be.
-      if (res.ok) {
-        gs.done = true;
-        update(() => res.bar, false);
-      }
-    });
+    frame.current = requestAnimationFrame(() => moveEnd(gs, x, y));
   };
 
-  /** Where the grabbed point should be (plane coordinates, whole mm). */
-  const dragTarget = (gs: { p0: Vec2; x: number; y: number }, x: number, y: number): Vec2 => ({
-    x: Math.round(gs.p0.x + (x - gs.x) / v.s),
-    y: Math.round(gs.p0.y - (y - gs.y) / v.s),
-  });
+  /** Which end of the bar is under (x, y) on screen, if any. */
+  const endAt = (x: number, y: number): 'A' | 'B' | null => {
+    const near = (p: Vec2) => {
+      const q = toS(p);
+      return Math.hypot(q.x - x, q.y - y) < PICK_PX + 4;
+    };
+    if (near(g.vertices[g.vertices.length - 1])) return 'B';
+    if (near(g.vertices[0])) return 'A';
+    return null;
+  };
+
+  /**
+   * Move the grabbed end to the cursor. End A is the origin of the drawing, so moving A means
+   * moving end B the opposite way and then shifting the view, which leaves end B in place on
+   * screen and brings end A under the cursor.
+   */
+  const moveEnd = (gs: Extract<NonNullable<typeof gesture.current>, { kind: 'end' }>, x: number, y: number) => {
+    const d = { x: (x - gs.x) / gs.v0.s, y: -(y - gs.y) / gs.v0.s };
+    const last = sketchGeometry(gs.start).vertices.length - 1;
+    const to =
+      gs.which === 'B'
+        ? { x: Math.round(gs.p0.x + d.x), y: Math.round(gs.p0.y + d.y) }
+        : { x: Math.round(gs.b0.x - d.x), y: Math.round(gs.b0.y - d.y) };
+    const res = dragPoint(gs.start, last, to);
+    // Out of reach of the locks: the bar stays where it last could be.
+    if (!res.ok) return;
+    gs.done = true;
+    update(() => res.bar, false);
+    if (gs.which === 'A') {
+      const b = sketchGeometry(res.bar).vertices[last];
+      setView({ s: gs.v0.s, cx: gs.v0.cx + b.x - gs.b0.x, cy: gs.v0.cy + b.y - gs.b0.y });
+    }
+  };
 
   const onUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId);
@@ -388,21 +432,17 @@ export function ProfileEditor({
     const gs = gesture.current;
     gesture.current = null;
     if (!gs) return;
-    if (gs.kind === 'leg') {
+    if (gs.kind === 'end') {
       cancelAnimationFrame(frame.current);
       if (gs.moved) {
-        // Finish with the exact final position, then put the whole drag in the undo history as one change.
+        // Finish at the exact final position, then put the whole drag in the undo history as one change.
         const { x, y } = local(e);
-        const res = dragLeg(gs.start, gs.step, gs.along, dragTarget(gs, x, y));
-        if (res.ok) {
-          gs.done = true;
-          update(() => res.bar, false);
-        }
+        moveEnd(gs, x, y);
         afterDrag.current = true;
         commit(gs.start);
-        if (!gs.done) onMessage('Ten odcinek nie może się przesunąć – sąsiednie długości i kąty są zablokowane.');
-      } else onSelect(gs.step === selected ? null : gs.step);
-    } else if (!gs.moved) onSelect(null);
+        if (!gs.done) onMessage('Tego końca nie da się przesunąć – długości i kąty są zablokowane.');
+      }
+    } else if (!gs.moved) onSelect(gs.leg === undefined || gs.leg === selected ? null : gs.leg);
   };
 
   const onWheel = (e: React.WheelEvent) => {
@@ -592,7 +632,7 @@ export function ProfileEditor({
         : 'Kliknij punkt szyny (kropka) albo oś, od której mierzysz'
       : tool === 'axis'
         ? 'Kliknij miejsce albo punkt szyny, przez który ma przechodzić oś'
-        : 'Przeciągnij odcinek, żeby go przesunąć · kłódka blokuje wartość';
+        : 'Złap koniec szyny (zielony punkt) i przeciągnij · kłódka blokuje wartość';
 
   return (
     <div className="bb-viewport viewer sketch2d">
@@ -629,7 +669,7 @@ export function ProfileEditor({
         </button>
       </div>
       <div
-        className={`bb-viewcanvas sk-canvas tool-${tool}`}
+        className={`bb-viewcanvas sk-canvas tool-${tool} ${tool === 'none' && hover !== null ? 'over-end' : ''}`}
         ref={hostRef}
         onPointerDown={onDown}
         onPointerMove={onMove}
@@ -709,7 +749,7 @@ export function ProfileEditor({
                 className={`sk-pt ${end ? 'is-end' : ''} ${hover === i ? 'is-hover' : ''} ${isFirst ? 'is-first' : ''}`}
                 cx={s.x}
                 cy={s.y}
-                r={tool === 'dim' ? 7 : 4.5}
+                r={tool === 'dim' ? 7 : end ? 8 : 4.5}
               />
             );
           })}

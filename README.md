@@ -85,9 +85,10 @@ pierwszego odcinka leży na osi X):
   się nie zmieniają; zablokowane wymiary są pilnowane także przy zmianie długości w liście.
 - **Linie odniesienia** (czerwone) leżą na zewnętrznej krawędzi szyny (przy wymiarach po
   zewnętrznej), a punkty wymiarów to zewnętrzne ostre narożniki i końce na tej krawędzi.
-- **Przeciąganie odcinka** – chwycony punkt idzie za myszą/palcem: zmieniają się najpierw inne
-  długości, potem długość samego odcinka, a kąty dopiero gdy długości nie wystarczą albo są
-  zablokowane (przy zablokowanych kątach – tylko długości).
+- **Przeciąganie końców** – złap zielony punkt na końcu A albo B i przeciągnij; punkt idzie za
+  myszą/palcem. Zmieniają się długości, a kąty dopiero gdy długości nie wystarczą albo są
+  zablokowane (przy zablokowanych kątach – tylko długości). Przy końcu A koniec B zostaje na
+  miejscu. Kliknięcie odcinka zaznacza go, przeciąganie tła przesuwa widok.
 Konflikt (zablokowany wymiar nie do utrzymania) jest pokazany na czerwono.
 
 ## Szafa (odniesienie)

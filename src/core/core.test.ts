@@ -23,7 +23,7 @@ import {
 import { sanitizeBusbar } from './sanitize';
 import { planSync } from './syncPlan';
 import { freeHolePosition, removeStep } from './edit';
-import { dimConflicts, dragLeg, keepLockedDims, measureDim, setDimValue, sketchGeometry } from './sketch';
+import { dimConflicts, dragLeg, dragPoint, keepLockedDims, measureDim, setDimValue, sketchGeometry } from './sketch';
 import { barToCabinet, cabinetConfig, checkCabinet, phaseAxis, widthAxis } from './cabinet';
 
 const S40x10: Section = { width: 40, thickness: 10, material: 'Cu' };
@@ -778,6 +778,20 @@ describe('2D sketch and driving dimensions', () => {
     const g2 = sketchGeometry(res.bar);
     const p = g2.center[2];
     expect(Math.hypot(p.x - to.x, p.y - to.y)).toBeLessThan(0.5);
+  });
+
+  it('dragging end B changes the lengths, or the angle when they are locked', () => {
+    const bar = newBusbar(S40x10, [straight(200), bend(90, 'up', 10), straight(150)]);
+    // End B at (200, 150); pull it to (260, 190).
+    const res = dragPoint(bar, 2, { x: 260, y: 190 });
+    const L = res.bar.steps.filter((s) => s.kind === 'straight').map((s) => (s as StraightStep).length);
+    expect(L).toEqual([260, 190]);
+    expect((res.bar.steps[1] as { angle: number }).angle).toBe(90);
+    const locked = { ...bar, steps: bar.steps.map((s) => (s.kind === 'straight' ? { ...s, locked: true } : s)) };
+    const at60 = { ...locked, steps: locked.steps.map((s, i) => (i === 1 ? { ...s, angle: 60 } : s)) };
+    const to = sketchGeometry(at60).vertices[2];
+    const res2 = dragPoint(locked, 2, to);
+    expect((res2.bar.steps[1] as { angle: number }).angle).toBeCloseTo(60, 0);
   });
 
   it('dimension points lie on the outer faces for outside dimensions', () => {
