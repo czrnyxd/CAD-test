@@ -61,6 +61,14 @@ Na telefonie lub tablecie możesz potem dodać stronę do ekranu głównego („
 - **Przekroje:** lista typowych przekrojów Cu oraz **„Inny przekrój…”** (na liście u góry; w oknie nowej szyny pola rozwijają się w tym samym oknie): szerokość 5–300 mm, grubość 1–50 mm (mniejsza od szerokości), podgląd przekroju w skali. Własne przekroje są zapamiętywane na liście.
 - **Ustawienia maszyny:** nazwa maszyny, promień narzędzia (z przyciskiem „ustaw we wszystkich gięciach projektu”), K, sprężynowanie, minimalne ramię, punkt odniesienia gięcia.
 
+## Aktualizacja aplikacji
+
+Po wdrożeniu nowej wersji na serwer aplikacja sama to zauważy (przy starcie, co 10 minut i po
+powrocie do karty) i pokaże na dolnym pasku przycisk **Nowa wersja – aktualizuj**. Można też
+sprawdzić ręcznie: **Ustawienia → Aplikacja → Sprawdź aktualizacje**. Aktualizacja tylko
+wczytuje aplikację na nowo – projekty, ustawienia i połączenie z serwerem zostają (nie trzeba
+czyścić plików cookie ani danych przeglądarki).
+
 ## Komputer przy stanowisku (mysz i klawiatura)
 
 Na komputerze z myszą aplikacja sama przełącza się na sterowanie myszą i klawiaturą (zmiana:

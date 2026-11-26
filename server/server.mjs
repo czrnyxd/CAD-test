@@ -208,7 +208,7 @@ export function createServer({ dataDir, staticDir = '', token = '', corsOrigin =
     const base = path.basename(file);
     // The start page and the service worker must always be fresh; hashed assets never change.
     const cache =
-      base === 'index.html' || base === 'sw.js' || ext === '.webmanifest'
+      base === 'index.html' || base === 'sw.js' || base === 'version.json' || ext === '.webmanifest'
         ? 'no-cache'
         : file.includes(`${path.sep}assets${path.sep}`)
           ? 'public, max-age=31536000, immutable'

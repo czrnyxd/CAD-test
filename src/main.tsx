@@ -15,12 +15,16 @@ import './tokens.css';
 import './design.css';
 import './styles.css';
 import { startSync } from './sync';
+import { cleanUpdateParam } from './update';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
   </StrictMode>,
 );
+
+// After an update the address ends with ?v=… – tidy it up.
+cleanUpdateParam();
 
 // Offline support (production build only, not inside embedded frames).
 if (import.meta.env.PROD && 'serviceWorker' in navigator && window.self === window.top) {

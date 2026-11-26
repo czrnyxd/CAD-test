@@ -34,6 +34,7 @@ import { keepLockedDims } from './core/sketch';
 import { InlineEditor } from './ui/InlineEditor';
 import { KeysDialog } from './ui/KeysDialog';
 import { keyboardBusy } from './ui/keys';
+import { APP_BUILT_AT, applyUpdate, checkForUpdate, fmtBuilt, type VersionInfo } from './update';
 import { CabinetPanel } from './ui/CabinetPanel';
 import { cabinetConfig, checkCabinet } from './core/cabinet';
 import { Viewer3D } from './ui/Viewer3D';
@@ -134,6 +135,28 @@ function ToolButton({
   );
 }
 
+/** Is there a newer version on the server? Checked at start, every 10 minutes and when the app is shown again. */
+function useNewVersion(): [VersionInfo | null, () => Promise<VersionInfo | null>] {
+  const [info, setInfo] = useState<VersionInfo | null>(null);
+  const check = useCallback(async () => {
+    const v = await checkForUpdate();
+    setInfo(v);
+    return v;
+  }, []);
+  useEffect(() => {
+    const first = setTimeout(check, 3000);
+    const every = setInterval(check, 10 * 60 * 1000);
+    const onShow = () => document.visibilityState === 'visible' && check();
+    document.addEventListener('visibilitychange', onShow);
+    return () => {
+      clearTimeout(first);
+      clearInterval(every);
+      document.removeEventListener('visibilitychange', onShow);
+    };
+  }, [check]);
+  return [info, check];
+}
+
 export default function App() {
   const {
     bar,
@@ -155,6 +178,13 @@ export default function App() {
     addCustomSection,
   } = useStore();
   const layout = useLayout();
+  const [newVersion, recheck] = useNewVersion();
+  const [updating, setUpdating] = useState(false);
+  const runUpdate = () => {
+    if (!newVersion) return;
+    setUpdating(true);
+    void applyUpdate(newVersion.id);
+  };
   const [view2d, setView2d] = useState(false);
   const [desktop, inputPref, setInputPref] = useInputMode();
   // The value that was clicked last – the typed-in editor opens right over it.
@@ -563,6 +593,9 @@ export default function App() {
           numpad={openNumpad}
           inputPref={inputPref}
           setInputPref={setInputPref}
+          newVersion={newVersion}
+          recheck={recheck}
+          runUpdate={runUpdate}
         />
       )}
 
@@ -584,6 +617,17 @@ export default function App() {
           </>
         )}
         <SyncBadge onOpenSettings={() => setTab('settings')} />
+        {newVersion && (
+          <button
+            className="bb-btn bb-btn--primary update-btn"
+            onClick={runUpdate}
+            disabled={updating}
+            title="Wczytaj nową wersję aplikacji – projekty i ustawienia zostają"
+          >
+            <Icon name="rotate" />
+            {updating ? 'Aktualizuję…' : layout === 'phone' ? 'Aktualizuj' : 'Nowa wersja – aktualizuj'}
+          </button>
+        )}
         <span className="bb-spacer" />
         {issues.length ? (
           <button
@@ -793,6 +837,9 @@ function SettingsTab({
   numpad,
   inputPref,
   setInputPref,
+  newVersion,
+  recheck,
+  runUpdate,
 }: {
   bar: Busbar;
   settings: MachineSettings;
@@ -801,7 +848,11 @@ function SettingsTab({
   numpad: (r: NumPadRequest) => void;
   inputPref: InputPref;
   setInputPref: (p: InputPref) => void;
+  newVersion: VersionInfo | null;
+  recheck: () => Promise<VersionInfo | null>;
+  runUpdate: () => void;
 }) {
+  const [checked, setChecked] = useState<'idle' | 'checking' | 'latest'>('idle');
   const cutLength = (m: DimensionMode) => analyze({ ...bar, dimensionMode: m }, settings).flatLength;
   const firstBendAt = (ref: MachineSettings['bendLineReference']) =>
     analyze(bar, { ...settings, bendLineReference: ref }).bends[0]?.position;
@@ -940,6 +991,40 @@ function SettingsTab({
             dalej), działają skróty klawiszowe (F1). Dotyk: duża klawiatura ekranowa. Automatycznie wybiera według urządzenia.
             Wszystko można powiększyć klawiszami Ctrl + plus.
           </p>
+        </section>
+        <section className="bb-card">
+          <h3 className="bb-card-title">
+            Aplikacja<span className="bb-card-sub">wersja z {fmtBuilt(APP_BUILT_AT)}</span>
+          </h3>
+          {newVersion ? (
+            <Notice tone="info">
+              Jest nowa wersja (z {fmtBuilt(newVersion.builtAt)}). Aktualizacja tylko wczytuje aplikację na nowo – projekty,
+              ustawienia i połączenie z serwerem zostają.
+            </Notice>
+          ) : checked === 'latest' ? (
+            <Notice tone="ok">Masz najnowszą wersję.</Notice>
+          ) : null}
+          <div className="bb-row">
+            {newVersion ? (
+              <button className="bb-btn bb-btn--primary bb-grow" onClick={runUpdate}>
+                <Icon name="rotate" />
+                Aktualizuj teraz
+              </button>
+            ) : (
+              <button
+                className="bb-btn bb-btn--secondary bb-grow"
+                disabled={checked === 'checking'}
+                onClick={async () => {
+                  setChecked('checking');
+                  const v = await recheck();
+                  setChecked(v ? 'idle' : 'latest');
+                }}
+              >
+                <Icon name="rotate" />
+                {checked === 'checking' ? 'Sprawdzam…' : 'Sprawdź aktualizacje'}
+              </button>
+            )}
+          </div>
         </section>
         <ServerSettings />
       </div>

@@ -35,6 +35,8 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   // Server API (projects): always live, never from the offline cache.
   if (url.pathname.includes('/api/')) return;
+  // Version check (offer of an update): always from the server.
+  if (url.pathname.endsWith('/version.json')) return;
 
   if (req.mode === 'navigate') {
     event.respondWith(

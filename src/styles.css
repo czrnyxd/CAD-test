@@ -1824,3 +1824,9 @@ kbd {
   transform: translate(-50%, -170%);
   font-size: 16px;
 }
+
+/* New version available: button in the status bar */
+.update-btn {
+  min-height: 48px;
+  white-space: nowrap;
+}
