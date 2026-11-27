@@ -34,6 +34,7 @@ import { keepLockedDims } from './core/sketch';
 import { InlineEditor } from './ui/InlineEditor';
 import { KeysDialog } from './ui/KeysDialog';
 import { keyboardBusy } from './ui/keys';
+import { downloadSheetPdf, pdfFileName } from './pdf';
 import { APP_BUILT_AT, applyUpdate, checkForUpdate, fmtBuilt, type VersionInfo } from './update';
 import { CabinetPanel } from './ui/CabinetPanel';
 import { cabinetConfig, checkCabinet } from './core/cabinet';
@@ -321,6 +322,26 @@ export default function App() {
     setTimeout(() => window.print(), 150);
   };
 
+  const [pdfBusy, setPdfBusy] = useState(false);
+  /** Save the operator sheet as a PDF file (same content as the printout). */
+  const downloadPdf = async () => {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      setSnapshot(renderSnapshot(assembly.parts, assembly.bbox));
+      await new Promise((r) => setTimeout(r, 150)); // let the sheet render with the 3D picture
+      const sheet = document.querySelector<HTMLElement>('.print-sheet');
+      if (!sheet) throw new Error('no sheet');
+      const name = pdfFileName(bar.name, bar.orderNo);
+      await downloadSheetPdf(sheet, name);
+      setToast({ text: `Zapisano ${name}` });
+    } catch {
+      setToast({ text: 'Nie udało się zapisać PDF. Użyj „Drukuj” i wybierz drukarkę „Zapisz jako PDF”.' });
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   const sections = sectionList(customSections, bar.section);
   const nameField = (
     <label className="bb-name">
@@ -396,6 +417,13 @@ export default function App() {
       <ToolButton icon="plus" label="Nowa" onClick={() => setModal('new')} />
       <ToolButton icon="folder" label="Projekty" onClick={() => setModal('projects')} />
       <ToolButton icon="print" label="Drukuj" title="Drukuj (Ctrl+P)" onClick={print} />
+      <ToolButton
+        icon="pdf"
+        label={pdfBusy ? 'Zapis…' : 'PDF'}
+        title="Pobierz kartę operatora jako plik PDF"
+        onClick={downloadPdf}
+        disabled={pdfBusy}
+      />
       {desktop && <ToolButton icon="keyboard" label="Skróty" title="Skróty klawiszowe (F1)" onClick={() => setModal('keys')} />}
     </div>
   );
@@ -446,6 +474,10 @@ export default function App() {
                   <button className="bb-btn bb-btn--secondary bb-btn--block" onClick={print}>
                     <Icon name="print" />
                     Drukuj
+                  </button>
+                  <button className="bb-btn bb-btn--secondary bb-btn--block" onClick={downloadPdf} disabled={pdfBusy}>
+                    <Icon name="pdf" />
+                    Pobierz PDF
                   </button>
                 </div>
               )}

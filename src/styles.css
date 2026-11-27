@@ -1076,6 +1076,28 @@ span.bb-st-check {
 }
 
 /* ---------- Print: A4 landscape operator sheet, always light ---------- */
+/* Print sheet parts (also used when saving a PDF, which renders the sheet on screen) */
+.bb-a4 .flat-svg {
+  max-height: 200px;
+}
+.bb-a4 .print-flat .flat-svg {
+  max-height: 300px;
+}
+.bb-a4 .profile-svg {
+  max-height: 300px;
+}
+.bb-a4 .bend-cards {
+  display: none !important;
+}
+.bb-a4 .bend-table-wrap {
+  display: block !important;
+}
+.bb-a4 .table-note {
+  font-size: 12px;
+  line-height: 15px;
+  margin-top: 2px;
+}
+
 /* Nothing is cut off: when the tables do not fit, the sheet continues on the next page. */
 .bb-a4 {
   height: auto;
@@ -1117,6 +1139,14 @@ span.bb-st-check {
 }
 .print-sheet {
   display: none;
+}
+/* While a PDF is being made: rendered off screen at its real size. */
+.print-sheet.is-capturing {
+  display: block;
+  position: fixed;
+  left: -20000px;
+  top: 0;
+  pointer-events: none;
 }
 .print-3d {
   display: block;
@@ -1176,29 +1206,9 @@ span.bb-st-check {
     page-break-after: auto;
     break-after: auto;
   }
-  .bb-a4 .flat-svg {
-    max-height: 200px;
-  }
-  .bb-a4 .print-flat .flat-svg {
-    max-height: 300px;
-  }
   .bb-a4 .bb-card {
     break-inside: avoid;
     page-break-inside: avoid;
-  }
-  .bb-a4 .profile-svg {
-    max-height: 300px;
-  }
-  .bb-a4 .bend-cards {
-    display: none !important;
-  }
-  .bb-a4 .bend-table-wrap {
-    display: block !important;
-  }
-  .bb-a4 .table-note {
-    font-size: 12px;
-    line-height: 15px;
-    margin-top: 2px;
   }
 }
 .drawing {
