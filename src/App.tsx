@@ -1450,13 +1450,18 @@ function PrintSheet({
             />
           </div>
         </div>
-        <div className="bb-a4-grid">
+        {/* The flat pattern is what the operator works from: full width, on top. */}
+        <section className="bb-card print-flat">
+          <h3 className="bb-card-title">Rozwinięcie{double ? ` – ${p1.label}` : ''}</h3>
+          <FlatPatternSvg bar={p1.bar} analysis={p1.analysis} settings={settings} width={1060} />
+        </section>
+        <div className={`bb-a4-grid ${p1.analysis.holes.length ? 'has-holes' : ''}`}>
           <div className="bb-a4-col">
             <section className="bb-card">
               <h3 className="bb-card-title">
                 {double ? 'Gotowy układ (sprawdź po gięciu)' : 'Gotowa szyna (sprawdź po gięciu)'}
               </h3>
-              <ProfileView project={bar} assembly={assembly} width={420} maxHeight={300} />
+              <ProfileView project={bar} assembly={assembly} width={240} maxHeight={140} />
             </section>
             {snapshot && (
               <section className="bb-card print-3d-card">
@@ -1467,19 +1472,9 @@ function PrintSheet({
           </div>
           <div className="bb-a4-col">
             <section className="bb-card">
-              <h3 className="bb-card-title">Rozwinięcie{double ? ` – ${p1.label}` : ''}</h3>
-              <FlatPatternSvg bar={p1.bar} analysis={p1.analysis} settings={settings} width={600} />
-            </section>
-            <section className="bb-card">
               <h3 className="bb-card-title">Gięcia{double ? ` – ${p1.label}` : ''}</h3>
               <BendTable analysis={p1.analysis} settings={settings} print />
             </section>
-            {p1.analysis.holes.length > 0 && (
-              <section className="bb-card">
-                <h3 className="bb-card-title">Otwory</h3>
-                <HoleTable bar={p1.bar} analysis={p1.analysis} print />
-              </section>
-            )}
             {(double || issues.length > 0) && (
               <div className="print-notes">
                 {double && <div>Podwójna szyna: {doubleNote(assembly)}</div>}
@@ -1492,6 +1487,14 @@ function PrintSheet({
               </div>
             )}
           </div>
+          {p1.analysis.holes.length > 0 && (
+            <div className="bb-a4-col">
+              <section className="bb-card">
+                <h3 className="bb-card-title">Otwory</h3>
+                <HoleTable bar={p1.bar} analysis={p1.analysis} print />
+              </section>
+            </div>
+          )}
         </div>
         {footer(1)}
       </div>
@@ -1512,9 +1515,9 @@ function PrintSheet({
               <A4Meta big label="Długość cięcia" value={`${fmt(part.analysis.flatLength)} mm`} />
             </div>
           </div>
-          <section className="bb-card">
+          <section className="bb-card print-flat">
             <h3 className="bb-card-title">Rozwinięcie – {part.label}</h3>
-            <FlatPatternSvg bar={part.bar} analysis={part.analysis} settings={settings} width={1050} />
+            <FlatPatternSvg bar={part.bar} analysis={part.analysis} settings={settings} width={1060} />
           </section>
           <section className="bb-card">
             <h3 className="bb-card-title">Gięcia – {part.label}</h3>

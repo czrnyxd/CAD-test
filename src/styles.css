@@ -1076,6 +1076,45 @@ span.bb-st-check {
 }
 
 /* ---------- Print: A4 landscape operator sheet, always light ---------- */
+/* Nothing is cut off: when the tables do not fit, the sheet continues on the next page. */
+.bb-a4 {
+  height: auto;
+  min-height: 794px;
+  overflow: visible;
+}
+.bb-a4-grid {
+  grid-template-columns: 250px 1fr;
+  align-items: start;
+}
+.bb-a4-grid.has-holes {
+  grid-template-columns: 250px 1fr 262px;
+}
+.bb-a4 .print-flat .flat-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 300px;
+}
+.bb-a4 .table-scroll {
+  overflow: visible;
+}
+/* Compact tables on paper: all rows fit, the key values stay big. */
+.bb-a4 .bb-table--print th {
+  padding: 3px 6px;
+  white-space: normal;
+}
+.bb-a4 .bb-table--print td {
+  height: 32px;
+  padding: 0 6px;
+  font-size: 14px;
+}
+.bb-a4 .bb-table--print td.is-key {
+  font-size: 21px;
+  line-height: 24px;
+}
+.bb-a4 .print-3d {
+  max-height: 84px;
+}
 .print-sheet {
   display: none;
 }
@@ -1126,7 +1165,8 @@ span.bb-st-check {
   }
   .bb-a4 {
     width: 297mm;
-    height: 209mm;
+    height: auto;
+    min-height: 209mm;
     page-break-after: always;
     break-after: page;
     -webkit-print-color-adjust: exact;
@@ -1138,6 +1178,13 @@ span.bb-st-check {
   }
   .bb-a4 .flat-svg {
     max-height: 200px;
+  }
+  .bb-a4 .print-flat .flat-svg {
+    max-height: 300px;
+  }
+  .bb-a4 .bb-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .bb-a4 .profile-svg {
     max-height: 300px;
